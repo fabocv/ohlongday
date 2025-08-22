@@ -5,6 +5,14 @@ import base64
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import json
+import os
+import json
+import random
+
+# Cargar micro motivaciones desde archivo externo
+with open("reporte_python/micro_motivaciones.json", "r", encoding="utf-8") as f:
+    MICRO_MOTIVATIONS = json.load(f)
 
 def zscore(series: pd.Series):
     s = series.astype(float)
@@ -53,35 +61,135 @@ def icon_for_level(x):
     return mapping.get(int(x), "⬜️ N/A")
 
 def micro_motivation(level:int) -> str:
-    phrases = {
-        0: "Hoy toca ir con mucha amabilidad: delega lo que puedas y pide apoyo.",
-        1: "Un paso pequeñito vale. No tiene que salir perfecto.",
-        2: "Sostén lo que te funciona. Constancia suave antes que intensidad.",
-        3: "Reconoce el avance de hoy. Anota un pequeño logro."
-    }
-    return phrases.get(int(level), "Sigue a tu ritmo: amabilidad primero.")
+    frases = MICRO_MOTIVATIONS.get(str(level), ["Confía en tu proceso."])
+    return random.choice(frases)
 
-def build_week_findings(df: pd.DataFrame, thresholds: dict) -> list:
+
+def _pick_message(messages: dict, key: str, level: str, fallback: str) -> str:
+    try:
+        pool = messages.get(key, {}).get(level, [])
+        if pool:
+            return random.choice(pool)
+    except Exception:
+        pass
+    return fallback
+
+def _load_messages(config: dict | None = None) -> dict:
+    # Path can be provided via config["report"]["messages_path"]; else try default next to CSV/runtime.
+    default_candidates = []
+    if config and isinstance(config, dict):
+        p = (config.get("report") or {}).get("messages_path")
+        if p:
+            default_candidates.append(p)
+    default_candidates += ["./mensajes.json", "/mnt/data/mensajes.json"]
+    for cand in default_candidates:
+        try:
+            if os.path.exists(cand):
+                with open(cand, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            continue
+    # Minimal fallback
+    return {
+        "animo_bajo": {"leve": ["He notado señales suaves de ánimo bajo."],
+                       "moderado": ["Varios días con ánimo bajo."],
+                       "alto": ["Ánimo muy frágil últimamente."]},
+        "estres_alto": {"leve": ["Algo de tensión en el cuerpo."],
+                        "moderado": ["Estrés presente en varios registros."],
+                        "alto": ["Estrés muy intenso estos días."]},
+        "sueno_alterado": {"leve": ["Pequeñas variaciones en el sueño."],
+                           "moderado": ["Sueño irregular."],
+                           "alto": ["Sueño muy alterado."]},
+        "autocuidado_bajo": {"leve": ["Autocuidado algo bajo."],
+                             "moderado": ["Autocuidado en segundo plano."],
+                             "alto": ["Autocuidado muy bajo."]},
+        "tendencia_positiva": {"leve": ["Inicio de mejora."],
+                               "moderado": ["Tendencia positiva clara."],
+                               "alto": ["Mejora fuerte y sostenida."]}
+    }
+
+def build_week_findings(df: pd.DataFrame, thresholds: dict, config: dict | None = None) -> list:
+    messages = _load_messages(config)
     findings = []
+
+    # --- Ánimo bajo (posible DI) ---
+    low_mask = df["z_animo"] < thresholds.get("animo_bajo_z", -0.3)
     streak = 0
     max_streak_low = 0
-    for v in (df["z_animo"] < thresholds.get("animo_bajo_z", -0.3)):
+    for v in low_mask:
         if v:
             streak += 1
-            max_streak_low = max(max_streak_low, streak)
+            if streak > max_streak_low:
+                max_streak_low = streak
         else:
             streak = 0
-    if max_streak_low >= thresholds.get("animo_bajo_streak", 3):
-        findings.append("He notado que tu ánimo ha estado un poco bajo en varios registros seguidos. Quizá sea buen momento para regalarte cuidados suaves: descanso breve, agua y algo de luz natural.")
-    if (df["z_estres"] > thresholds.get("estres_alto_z", 0.6)).rolling(3).sum().max() and (df["z_estres"] > thresholds.get("estres_alto_z", 0.6)).mean() > thresholds.get("estres_alto_ratio_min", 0.3):
-        findings.append("Parece que el estrés estuvo más intenso últimamente. Prueba 2–3 pausas cortas hoy (2–3 min) y una respiración 4–6; pon límites amables cuando puedas.")
-    if df["horas_sueno"].std(ddof=0) > thresholds.get("sueno_irregular_std_horas", 1.2) or df["z_sueno_calidad"].mean() < thresholds.get("sueno_calidad_media_min", -0.2):
-        findings.append("Tu descanso se ve algo irregular. Una rutina simple (hora parecida para dormir, luz tenue, pantallas fuera 60 min) puede ayudarte a recuperar energía.")
-    if df["BDP_score"].tail(3).mean() - df["BDP_score"].head(3).mean() > thresholds.get("tendencia_positiva_delta", 0.3):
-        findings.append("¡Qué bien! Se nota una tendencia positiva estos días. Reconoce lo que te resultó y repítelo con calma.")
-    if "autocuidado" in df.columns and df["autocuidado"].mean() < thresholds.get("autocuidado_media_min", 5):
-        findings.append("El autocuidado quedó un poco atrás. Elige una acción amable y concreta hoy (una ducha tranquila, ordenar 5 min, un paseo corto).")
+    if low_mask.any():
+        mean_low = float(df.loc[low_mask, "z_animo"].mean()) if low_mask.any() else 0.0
+        lvl = "leve"
+        if max_streak_low >= thresholds.get("animo_bajo_streak", 3) or mean_low < -0.4:
+            lvl = "moderado"
+        if max_streak_low >= thresholds.get("animo_bajo_streak", 3) + 2 or mean_low < -0.6:
+            lvl = "alto"
+        msg = _pick_message(messages, "animo_bajo", lvl,
+                            "He notado que tu ánimo ha estado algo bajo.")
+        findings.append(f"Indicador: posible ánimo bajo ({lvl}) — {msg}")
+
+    # --- Estrés alto (posible AI) ---
+    high_stress = df["z_estres"] > thresholds.get("estres_alto_z", 0.6)
+    prop = float(high_stress.mean()) if len(df) else 0.0
+    if high_stress.any():
+        lvl = "leve"
+        if prop >= thresholds.get("estres_alto_ratio_min", 0.3):
+            lvl = "moderado"
+        if prop >= 0.6:
+            lvl = "alto"
+        msg = _pick_message(messages, "estres_alto", lvl,
+                            "Parece que el estrés estuvo más intenso últimamente.")
+        findings.append(f"Indicador: posible estrés alto ({lvl}) — {msg}")
+
+    # --- Sueño alterado ---
+    std_sueno = float(df["horas_sueno"].std(ddof=0)) if "horas_sueno" in df.columns else 0.0
+    mean_z_sueno = float(df.get("z_sueno_calidad", pd.Series([0]*len(df))).mean())
+    if (std_sueno > 0) or (mean_z_sueno < 0):
+        lvl = "leve"
+        if std_sueno > thresholds.get("sueno_irregular_std_horas", 1.2) or mean_z_sueno < thresholds.get("sueno_calidad_media_min", -0.2):
+            lvl = "moderado"
+        if std_sueno > thresholds.get("sueno_irregular_std_horas", 1.2) + 0.8 or mean_z_sueno < -0.6:
+            lvl = "alto"
+        msg = _pick_message(messages, "sueno_alterado", lvl,
+                            "Tu descanso se ve algo irregular.")
+        findings.append(f"Indicador: posible sueño alterado ({lvl}) — {msg}")
+
+    # --- Autocuidado bajo ---
+    if "autocuidado" in df.columns and not df["autocuidado"].isna().all():
+        mean_auto = float(df["autocuidado"].mean())
+        if mean_auto < thresholds.get("autocuidado_media_min", 5):
+            lvl = "moderado"
+            if mean_auto < thresholds.get("autocuidado_media_min", 5) - 2:
+                lvl = "alto"
+            elif mean_auto >= thresholds.get("autocuidado_media_min", 5) - 1:
+                lvl = "leve"
+            msg = _pick_message(messages, "autocuidado_bajo", lvl,
+                                "El autocuidado quedó un poco atrás.")
+            findings.append(f"Indicador: posible autocuidado bajo ({lvl}) — {msg}")
+
+    # --- Tendencia positiva ---
+    if len(df) >= 6:
+        first = float(df["BDP_score"].head(3).mean())
+        last = float(df["BDP_score"].tail(3).mean())
+        delta = last - first
+        if delta > 0:
+            lvl = "leve"
+            if delta > thresholds.get("tendencia_positiva_delta", 0.3):
+                lvl = "moderado"
+            if delta > thresholds.get("tendencia_positiva_delta", 0.3) + 0.4:
+                lvl = "alto"
+            msg = _pick_message(messages, "tendencia_positiva", lvl,
+                                "Se nota una tendencia positiva estos días.")
+            findings.append(f"Indicador: posible tendencia positiva ({lvl}) — {msg}")
+
     return findings
+
 
 def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
     df = df.copy()
@@ -111,7 +219,7 @@ def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
           <div class="msg-micro">💬 <em>{micro}</em></div>
         </div>
         """)
-    return " ".join(cards) if cards else "<p class='muted'>No hay mensajes.</p>"
+    return "\\n".join(cards) if cards else "<p class='muted'>No hay mensajes.</p>"
 
 def generate_report_coach(input_csv: str, output_html: str, config: dict | None = None, start_date: str | None = None, end_date: str | None = None, tag_filter: str | None = None) -> str:
     df = pd.read_csv(input_csv, encoding="utf-8")
@@ -150,7 +258,7 @@ def generate_report_coach(input_csv: str, output_html: str, config: dict | None 
     imgs.append(simple_line_plot(dates, ordered["P_t"], "P_t (Prop/Claridad)", "z"))
     imgs.append(simple_line_plot(dates, ordered["C_t"], "C_t (Conexión)", "z"))
     imgs.append(simple_line_plot(dates, ordered["S_t_neg"], "S_t⁻ (Estrés invertido)", "z"))
-    imgs_html = " ".join(imgs)
+    imgs_html = "\\n".join(imgs)
 
     small = ordered[["fecha","hora","H_t","V_t","C_t","P_t","S_t_neg","BDP_score","BDP_feno_0_3"]].copy()
     small["Estado"] = small["BDP_feno_0_3"].apply(icon_for_level)
@@ -162,7 +270,7 @@ def generate_report_coach(input_csv: str, output_html: str, config: dict | None 
     )
 
     thresholds = (config or {}).get("thresholds", {})
-    findings = build_week_findings(ordered, thresholds=thresholds)
+    findings = build_week_findings(ordered, thresholds=thresholds, config=config)
     timeline_html = build_messages_timeline(ordered, days=days_window)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
