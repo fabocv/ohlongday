@@ -1,12 +1,4 @@
 # bdp_report_coach.py
-# Genera un informe HTML que incluye: resumen cuantitativo, tendencias,
-# hallazgos automáticos y un timeline con micro-motivaciones intercaladas.
-# Espera un CSV con el esquema simplificado (fecha dd-MM-YYYY, hora mm:ss).
-#
-# Uso desde main.py:
-# from bdp_report_coach import generate_report_coach
-# generate_report_coach("bdp_week_sample.csv", "bdp_report_with_messages_coach.html")
-
 from datetime import datetime
 from io import BytesIO
 import base64
@@ -14,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# -------------------- Métricas --------------------
 def zscore(series: pd.Series):
     s = series.astype(float)
     mean = s.mean()
@@ -23,11 +14,11 @@ def zscore(series: pd.Series):
         return pd.Series([0.0]*len(s), index=s.index)
     return (s - mean) / std
 
-def compute_indices(df: pd.DataFrame):
+def compute_indices(df: pd.DataFrame, w_sueno: float = 1.2):
     for col in ["animo","activacion","conexion","proposito","claridad","estres","sueno_calidad"]:
         if col in df.columns:
             df[f"z_{col}"] = zscore(df[col])
-    v = df.get("z_activacion", 0) + 1.2*df.get("z_sueno_calidad", 0)  # pondera sueño
+    v = df.get("z_activacion", 0) + w_sueno*df.get("z_sueno_calidad", 0)
     p = df.get("z_proposito", 0) + df.get("z_claridad", 0)
     df["H_t"] = df.get("z_animo", 0)
     df["V_t"] = v
@@ -40,7 +31,6 @@ def compute_indices(df: pd.DataFrame):
     df["BDP_feno_0_3"] = pd.cut(df["BDP_score"], bins=bins, labels=labels).astype(int)
     return df
 
-# -------------------- Gráficos --------------------
 def fig_to_base64(figure):
     buf = BytesIO()
     figure.savefig(buf, format="png", bbox_inches="tight")
@@ -62,7 +52,6 @@ def icon_for_level(x):
     mapping = {0: "⬛️ Bloqueo fuerte", 1: "🟨 Débil/retroceso", 2: "🟩 En camino", 3: "🟦 Avance claro"}
     return mapping.get(int(x), "⬜️ N/A")
 
-# -------------------- Coaching --------------------
 def micro_motivation(level:int) -> str:
     phrases = {
         0: "Respira: hoy vale delegar y pedir apoyo.",
@@ -72,30 +61,25 @@ def micro_motivation(level:int) -> str:
     }
     return phrases.get(int(level), "Sigue a tu ritmo: amabilidad primero.")
 
-def build_week_findings(df: pd.DataFrame) -> list:
+def build_week_findings(df: pd.DataFrame, thresholds: dict) -> list:
     findings = []
-    # Ánimo bajo sostenido
     streak = 0
     max_streak_low = 0
-    for v in (df["z_animo"] < -0.3):
+    for v in (df["z_animo"] < thresholds.get("animo_bajo_z", -0.3)):
         if v:
             streak += 1
             max_streak_low = max(max_streak_low, streak)
         else:
             streak = 0
-    if max_streak_low >= 3:
+    if max_streak_low >= thresholds.get("animo_bajo_streak", 3):
         findings.append("DI alto: Tu ánimo estuvo bajo varios registros seguidos. Refuerza autocuidados suaves (descanso, agua, pausas breves).")
-    # Estrés alto
-    if (df["z_estres"] > 0.6).rolling(3).sum().max() and (df["z_estres"] > 0.6).mean() > 0.3:
+    if (df["z_estres"] > thresholds.get("estres_alto_z", 0.6)).rolling(3).sum().max() and (df["z_estres"] > thresholds.get("estres_alto_z", 0.6)).mean() > thresholds.get("estres_alto_ratio_min", 0.3):
         findings.append("Estrés elevado: considera micro-pausas 3×(2–3 min), respiración 4–6 y límites amables.")
-    # Sueño irregular
-    if df["horas_sueno"].std(ddof=0) > 1.2 or df["z_sueno_calidad"].mean() < -0.2:
+    if df["horas_sueno"].std(ddof=0) > thresholds.get("sueno_irregular_std_horas", 1.2) or df["z_sueno_calidad"].mean() < thresholds.get("sueno_calidad_media_min", -0.2):
         findings.append("Sueño irregular: prueba higiene de sueño (horario, luz tenue, pantallas fuera 60 min).")
-    # Tendencia positiva
-    if df["BDP_score"].tail(3).mean() - df["BDP_score"].head(3).mean() > 0.3:
+    if df["BDP_score"].tail(3).mean() - df["BDP_score"].head(3).mean() > thresholds.get("tendencia_positiva_delta", 0.3):
         findings.append("Tendencia al alza: reconoce tus estrategias efectivas y repítelas esta semana.")
-    # Autocuidado bajo
-    if "autocuidado" in df.columns and df["autocuidado"].mean() < 5:
+    if "autocuidado" in df.columns and df["autocuidado"].mean() < thresholds.get("autocuidado_media_min", 5):
         findings.append("Autocuidado por debajo de lo deseado: elige una acción amable y concreta hoy (ducha, orden 5 min, paseo corto).")
     return findings
 
@@ -103,9 +87,9 @@ def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
     df = df.copy()
     df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce")
     df = df.sort_values(["fecha_dt", "hora", "entry_id"])
-    cutoff = df["fecha_dt"].max() - pd.Timedelta(days=days-1)
-    df = df[df["fecha_dt"] >= cutoff]
-
+    if not df["fecha_dt"].isna().all():
+        cutoff = df["fecha_dt"].max() - pd.Timedelta(days=days-1)
+        df = df[df["fecha_dt"] >= cutoff]
     cards = []
     for _, row in df.iterrows():
         msgs = []
@@ -118,7 +102,7 @@ def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
         if not msgs:
             msgs.append("—")
         content = "<br/>".join(msgs)
-        level = int(row.get("BDP_feno_0_3", 2))  # default 2
+        level = int(row.get("BDP_feno_0_3", 2))
         micro = micro_motivation(level)
         cards.append(f"""
         <div class="msg-card">
@@ -127,12 +111,10 @@ def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
           <div class="msg-micro">💬 <em>{micro}</em></div>
         </div>
         """)
-    return "\\n".join(cards) if cards else "<p class='muted'>No hay mensajes.</p>"
+    return "\n".join(cards) if cards else "<p class='muted'>No hay mensajes.</p>"
 
-# -------------------- Reporte principal --------------------
-def generate_report_coach(input_csv: str, output_html: str) -> str:
+def generate_report_coach(input_csv: str, output_html: str, config: dict | None = None, start_date: str | None = None, end_date: str | None = None, tag_filter: str | None = None) -> str:
     df = pd.read_csv(input_csv, encoding="utf-8")
-    # Tipado básico
     df["fecha"] = pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce").dt.strftime("%d-%m-%Y")
     for c in ["animo","activacion","conexion","proposito","claridad","estres","sueno_calidad",
               "horas_sueno","siesta_min","autocuidado","alimentacion","movimiento","dolor_fisico",
@@ -140,15 +122,27 @@ def generate_report_coach(input_csv: str, output_html: str) -> str:
               "cafeina_mg","alcohol_ud"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-    df = compute_indices(df)
+    days_window = (config or {}).get("report", {}).get("days_window", 7)
+    if start_date:
+        sd = pd.to_datetime(start_date, format="%d-%m-%Y", errors="coerce")
+        df = df[pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce") >= sd]
+    if end_date:
+        ed = pd.to_datetime(end_date, format="%d-%m-%Y", errors="coerce")
+        df = df[pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce") <= ed]
+    if not start_date and not end_date and not df.empty:
+        dates = pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce")
+        cutoff = dates.max() - pd.Timedelta(days=days_window-1)
+        df = df[dates >= cutoff]
+    if tag_filter and "tags" in df.columns:
+        df = df[df["tags"].fillna("").str.contains(tag_filter, case=False, na=False)]
+    w = (config or {}).get("weights", {}).get("sueno_en_vitalidad", 1.2)
+    df = compute_indices(df, w_sueno=w)
 
-    # Orden y fechas para gráficos
     ordered = df.copy()
     ordered["fecha_dt"] = pd.to_datetime(ordered["fecha"], format="%d-%m-%Y", errors="coerce")
     ordered = ordered.sort_values(["fecha_dt","hora"])
     dates = ordered["fecha_dt"]
 
-    # Gráficos
     imgs = []
     imgs.append(simple_line_plot(dates, ordered["BDP_score"], "BDP Score", "z-compuesto"))
     imgs.append(simple_line_plot(dates, ordered["H_t"], "H_t (Humor)", "z"))
@@ -156,9 +150,8 @@ def generate_report_coach(input_csv: str, output_html: str) -> str:
     imgs.append(simple_line_plot(dates, ordered["P_t"], "P_t (Prop/Claridad)", "z"))
     imgs.append(simple_line_plot(dates, ordered["C_t"], "C_t (Conexión)", "z"))
     imgs.append(simple_line_plot(dates, ordered["S_t_neg"], "S_t⁻ (Estrés invertido)", "z"))
-    imgs_html = "\\n".join(imgs)
+    imgs_html = "\n".join(imgs)
 
-    # Tabla resumen
     small = ordered[["fecha","hora","H_t","V_t","C_t","P_t","S_t_neg","BDP_score","BDP_feno_0_3"]].copy()
     small["Estado"] = small["BDP_feno_0_3"].apply(icon_for_level)
     styled_table = (
@@ -168,10 +161,9 @@ def generate_report_coach(input_csv: str, output_html: str) -> str:
         }).to_html(index=False, float_format=lambda x: f"{x:.2f}")
     )
 
-    # Hallazgos y timeline
-    findings = build_week_findings(ordered)
-    findings_html = "<ul>" + "".join(f"<li>{f}</li>" for f in findings) + "</ul>" if findings else "<p class='muted'>Sin hallazgos destacados esta semana.</p>"
-    timeline_html = build_messages_timeline(ordered, days=7)
+    thresholds = (config or {}).get("thresholds", {})
+    findings = build_week_findings(ordered, thresholds=thresholds)
+    timeline_html = build_messages_timeline(ordered, days=days_window)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     html = f"""<!doctype html>
@@ -213,11 +205,11 @@ def generate_report_coach(input_csv: str, output_html: str) -> str:
 
     <div class="card">
       <h2>Hallazgos automáticos</h2>
-      {findings_html}
+      {"<ul>" + "".join(f"<li>{f}</li>" for f in findings) + "</ul>" if findings else "<p class='muted'>Sin hallazgos destacados.</p>"}
     </div>
 
     <div class="card">
-      <h2>Mensajes + micro-motivaciones (7 días)</h2>
+      <h2>Mensajes + micro-motivaciones ({days_window} días)</h2>
       {timeline_html}
     </div>
 
