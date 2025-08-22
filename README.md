@@ -28,7 +28,7 @@ Mas detalles sobre el modelo: [Modelado del Bienestar Dinámico Personal (BDP)](
 
 Este proyecto implementa el **BDP (Balance Diario Psicoemocional)** en Python, de forma modular y con salida en **HTML enriquecido**. El sistema permite registrar, analizar y visualizar datos emocionales y de autocuidado, generando reportes semanales con un tono **humano, motivador y no clínico**.
 
-> Mas detalles de como se rellena el registro CSV: [📘 Guía para Rellenar el CSV del BDP](docs/BDP Registro.md)
+> Mas detalles de como se rellena el registro CSV: [Guía para Rellenar el CSV del BDP](docs/BDP Registro.md)
 
 ---
 
@@ -159,7 +159,7 @@ python bdp_main.py --csv datos.csv
 ### Parámetros opcionales
 
 * `--days N` → cambia la ventana de días (default: config).
-* `--tags` → filtra indicadores específicos. Ej: trabajo, estrés, fiesta, etc. (default: todos). Mas detalles sobre los tags del modelo: [📘 Guía para Rellenar el CSV del BDP](docs/BDP Registro.md)
+* `--tags` → filtra indicadores específicos. Ej: trabajo, estrés, fiesta, etc. (default: todos). Mas detalles sobre los tags del modelo: [Guía para Rellenar el CSV del BDP](docs/BDP Registro.md)
 
 Si no se entregan parámetros, el sistema toma `days_window` y todos los indicadores.
 
