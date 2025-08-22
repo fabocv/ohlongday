@@ -1,0 +1,78 @@
+{
+  "nombres": {
+    "footer_key": "Interpretación del día",
+    "comparacion_key": "Comparación con el día anterior"
+  },
+  "umbrales": {
+    "delta_significativo": 0.05,
+    "delta_fuerte": 0.15,
+    "min_areas_para_movido": 2,
+    "min_porcentaje_movido": 0.4
+  },
+  "peso_areas": {
+    "animo": 1.0,
+    "activacion": 1.0,
+    "sueno": 1.0,
+    "conexion": 0.8,
+    "proposito": 0.8,
+    "claridad": 1.0,
+    "estres": 1.2
+  },
+  "mapeo_tendencia": {
+    "up": "al alza",
+    "down": "a la baja",
+    "flat": "estable"
+  },
+  "iconos": {
+    "animo": "😊",
+    "activacion": "⚡",
+    "sueno": "🌙",
+    "conexion": "🤝",
+    "proposito": "🎯",
+    "claridad": "🔍",
+    "estres": "🔥"
+  },
+  "frases_generales": {
+    "sin_prev": "Primera medición del período: no hay día anterior para comparar.",
+    "sin_datos": "Hoy no hubo registros; se mantiene la última referencia conocida.",
+    "mejora": "En comparación al día de ayer, tu día mostró una **mejora general**.",
+    "empeora": "En comparación al día de ayer, tu día tuvo **mayor dificultad**.",
+    "estable": "Comparado con ayer, el panorama se mantuvo **relativamente estable**.",
+    "mixto": "Hubo **cambios mixtos** respecto a ayer: mejoras en algunas áreas y retrocesos en otras."
+  },
+  "mensajes_movimiento": {
+    "intro_mas_movido": "En comparación al día de ayer, tu día estuvo **más movido** por: {areas_list}.",
+    "intro_menos_movido": "Respecto a ayer, hoy se percibe **menos movimiento** general.",
+    "criterio": "Se considera 'más movido' si el número de áreas con cambios significativos supera {min_areas} o {min_pct}% del total medido."
+  },
+  "plantillas_detalle": {
+    "area_mejora_fuerte": "{icon} {area}: **mejoró mucho** (Δ +{delta}).",
+    "area_mejora": "{icon} {area}: **mejoró** (Δ +{delta}).",
+    "area_empeora_fuerte": "{icon} {area}: **empeoró notablemente** (Δ −{delta}).",
+    "area_empeora": "{icon} {area}: **descendió** (Δ −{delta}).",
+    "area_estable": "{icon} {area}: **estable** (Δ {delta}).",
+    "estres_inversion_mejora": "{icon} Estrés: **disminuyó** (Δ −{delta}), lo cual favorece el balance.",
+    "estres_inversion_empeora": "{icon} Estrés: **aumentó** (Δ +{delta}), podría influir en la percepción general."
+  },
+  "resumen_compuesto": {
+    "mejora_fuerte": "Balance global: **mejoró con claridad**.",
+    "mejora": "Balance global: **ligera mejora**.",
+    "estable": "Balance global: **sin cambios relevantes**.",
+    "empeora": "Balance global: **ligero retroceso**.",
+    "empeora_fuerte": "Balance global: **retroceso marcado**."
+  },
+  "seleccion_areas_destacadas": {
+    "max_listar": 4,
+    "orden": "por_magnitud_desc",
+    "notas": "Listar primero las áreas con mayor |Δ| y luego el resto si cabe."
+  },
+  "renderizado": {
+    "bloques": [
+      "frase_general",
+      "mensaje_movimiento",
+      "lista_detalle_areas",
+      "resumen_compuesto"
+    ],
+    "unir_lineas_con": " "
+  }
+}

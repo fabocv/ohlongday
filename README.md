@@ -153,7 +153,11 @@ El sistema selecciona aleatoriamente frases según **indicador** + **nivel**. Ej
 ## 🚀 Ejecución del sistema
 
 ```bash
-python bdp_main.py --csv datos.csv
+python bdp_main.py \
+  -i data/bdp_data_fake.csv \
+  -o output/informe.html \
+  -c bdp_compare_config.json \
+  -s 15-08-2025 -e 22-08-2025
 ```
 
 ### Parámetros opcionales

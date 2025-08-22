@@ -1,69 +1,73 @@
-# bdp_schema.py
+
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 import pandas as pd
-import numpy as np
 
-class BDPSchema:
-    REQUIRED_COLUMNS = [
-        "entry_id", "fecha", "hora",
-        "animo", "activacion", "conexion", "proposito", "claridad", "estres",
-        "sueno_calidad", "horas_sueno", "siesta_min",
-        "autocuidado", "alimentacion", "movimiento", "dolor_fisico",
-        "ansiedad", "irritabilidad",
-        "meditacion_min", "exposicion_sol_min", "agua_litros",
-        "cafeina_mg", "alcohol_ud",
-        "medicacion_tomada", "medicacion_tipo", "otras_sustancias",
-        "interacciones_significativas", "eventos_estresores", "tags", "notas"
-    ]
-    
-    SCALE_0_10 = [
-        "animo","activacion","conexion","proposito","claridad","estres",
-        "sueno_calidad","autocuidado","alimentacion","movimiento","dolor_fisico",
-        "ansiedad","irritabilidad"
-    ]
+# Canonical Spanish area names used in this project
+AREAS = [
+    "animo",
+    "activacion",
+    "sueno",
+    "conexion",
+    "proposito",
+    "claridad",
+    "estres"
+]
 
-    @staticmethod
-    def validate_columns(df: pd.DataFrame):
-        missing = [c for c in BDPSchema.REQUIRED_COLUMNS if c not in df.columns]
-        extra = [c for c in df.columns if c not in BDPSchema.REQUIRED_COLUMNS]
-        return missing, extra
+POSITIVE_AREAS = ["animo", "activacion", "sueno", "conexion", "proposito", "claridad"]
+NEGATIVE_AREAS = ["estres"]
 
-    @staticmethod
-    def coerce_types(df: pd.DataFrame) -> pd.DataFrame:
-        # Parsear fecha en formato dd-MM-YYYY
-        if "fecha" in df.columns:
-            df["fecha"] = pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce").dt.date
-        # Hora simple mm:ss (guardamos como string para no complicar)
-        if "hora" in df.columns:
-            df["hora"] = df["hora"].astype(str)
+# Default column mapping. Override as needed when calling the APIs.
+DEFAULT_COLUMNS = {
+    "fecha": "fecha",               # date/time of entry
+    "notas": "notas",               # free text note
+    "estresores": "estresores",     # list or comma-separated string
+    # Area signals (float). Provide any subset; missing will be ignored.
+    "animo": "animo",
+    "activacion": "activacion",
+    "sueno": "sueno",
+    "conexion": "conexion",
+    "proposito": "proposito",
+    "claridad": "claridad",
+    "estres": "estres",
+    # Optional precomputed fields
+    "categoria_dia": "categoria_dia"  # ("Muy negativo", "Débil", "Aceptable", "Positivo") or 0-3
+}
 
-        # Numéricos
-        numeric_cols = [
-            "horas_sueno","siesta_min","meditacion_min","exposicion_sol_min",
-            "agua_litros","cafeina_mg","alcohol_ud"
-        ]
-        numeric_cols += BDPSchema.SCALE_0_10
-        for c in numeric_cols:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        return df
+@dataclass
+class DayCard:
+    fecha: str
+    registros: int
+    resumen_areas: Dict[str, float]
+    mensajes_humanos: List[str]
+    notas: List[str]
+    estresores: List[str]
+    comparacion_prev: Optional[str]
+    interpretacion_dia: str
+    faltante: bool = False  # marks missing day
 
-    @staticmethod
-    def clip_scales(df: pd.DataFrame) -> pd.DataFrame:
-        for c in BDPSchema.SCALE_0_10:
-            if c in df.columns:
-                df[c] = df[c].clip(lower=0, upper=10)
-        if "horas_sueno" in df.columns:
-            df["horas_sueno"] = df["horas_sueno"].clip(lower=0, upper=24)
-        if "agua_litros" in df.columns:
-            df["agua_litros"] = df["agua_litros"].clip(lower=0, upper=10)
-        if "cafeina_mg" in df.columns:
-            df["cafeina_mg"] = df["cafeina_mg"].clip(lower=0, upper=1000)
-        if "alcohol_ud" in df.columns:
-            df["alcohol_ud"] = df["alcohol_ud"].clip(lower=0, upper=20)
-        if "siesta_min" in df.columns:
-            df["siesta_min"] = df["siesta_min"].clip(lower=0, upper=600)
-        if "meditacion_min" in df.columns:
-            df["meditacion_min"] = df["meditacion_min"].clip(lower=0, upper=600)
-        if "exposicion_sol_min" in df.columns:
-            df["exposicion_sol_min"] = df["exposicion_sol_min"].clip(lower=0, upper=600)
-        return df
+def coerce_date(series: pd.Series) -> pd.Series:
+    s = pd.to_datetime(series, errors="coerce")
+    return s.dt.tz_localize(None) if s.dt.tz is not None else s
+
+def ensure_str_list(x) -> List[str]:
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return []
+    if isinstance(x, list):
+        return [str(i).strip() for i in x if str(i).strip()]
+    # split by commas/semicolons if string
+    if isinstance(x, str):
+        # Allow JSON-like lists
+        t = x.strip()
+        if (t.startswith('[') and t.endswith(']')):
+            try:
+                arr = eval(t, {"__builtins__": {}}, {})
+                return [str(i).strip() for i in arr if str(i).strip()]
+            except Exception:
+                pass
+        for sep in [";", ",", "|", "•"]:
+            if sep in x:
+                return [i.strip() for i in x.split(sep) if i.strip()]
+        return [x.strip()] if x.strip() else []
+    return [str(x).strip()]
