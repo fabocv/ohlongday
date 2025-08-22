@@ -1,0 +1,18 @@
+{
+  "weights": {
+    "sueno_en_vitalidad": 1.2
+  },
+  "thresholds": {
+    "animo_bajo_z": -0.3,
+    "animo_bajo_streak": 3,
+    "estres_alto_z": 0.6,
+    "estres_alto_ratio_min": 0.3,
+    "sueno_irregular_std_horas": 1.2,
+    "sueno_calidad_media_min": -0.2,
+    "tendencia_positiva_delta": 0.3,
+    "autocuidado_media_min": 5
+  },
+  "report": {
+    "days_window": 7
+  }
+}
