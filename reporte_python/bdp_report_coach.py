@@ -54,10 +54,10 @@ def icon_for_level(x):
 
 def micro_motivation(level:int) -> str:
     phrases = {
-        0: "Respira: hoy vale delegar y pedir apoyo.",
-        1: "Pequeños pasos > pasos perfectos.",
-        2: "Sostén lo que funciona: constancia suave.",
-        3: "Celebra el avance: anota un logro mínimo."
+        0: "Hoy toca ir con mucha amabilidad: delega lo que puedas y pide apoyo.",
+        1: "Un paso pequeñito vale. No tiene que salir perfecto.",
+        2: "Sostén lo que te funciona. Constancia suave antes que intensidad.",
+        3: "Reconoce el avance de hoy. Anota un pequeño logro."
     }
     return phrases.get(int(level), "Sigue a tu ritmo: amabilidad primero.")
 
@@ -72,15 +72,15 @@ def build_week_findings(df: pd.DataFrame, thresholds: dict) -> list:
         else:
             streak = 0
     if max_streak_low >= thresholds.get("animo_bajo_streak", 3):
-        findings.append("DI alto: Tu ánimo estuvo bajo varios registros seguidos. Refuerza autocuidados suaves (descanso, agua, pausas breves).")
+        findings.append("He notado que tu ánimo ha estado un poco bajo en varios registros seguidos. Quizá sea buen momento para regalarte cuidados suaves: descanso breve, agua y algo de luz natural.")
     if (df["z_estres"] > thresholds.get("estres_alto_z", 0.6)).rolling(3).sum().max() and (df["z_estres"] > thresholds.get("estres_alto_z", 0.6)).mean() > thresholds.get("estres_alto_ratio_min", 0.3):
-        findings.append("Estrés elevado: considera micro-pausas 3×(2–3 min), respiración 4–6 y límites amables.")
+        findings.append("Parece que el estrés estuvo más intenso últimamente. Prueba 2–3 pausas cortas hoy (2–3 min) y una respiración 4–6; pon límites amables cuando puedas.")
     if df["horas_sueno"].std(ddof=0) > thresholds.get("sueno_irregular_std_horas", 1.2) or df["z_sueno_calidad"].mean() < thresholds.get("sueno_calidad_media_min", -0.2):
-        findings.append("Sueño irregular: prueba higiene de sueño (horario, luz tenue, pantallas fuera 60 min).")
+        findings.append("Tu descanso se ve algo irregular. Una rutina simple (hora parecida para dormir, luz tenue, pantallas fuera 60 min) puede ayudarte a recuperar energía.")
     if df["BDP_score"].tail(3).mean() - df["BDP_score"].head(3).mean() > thresholds.get("tendencia_positiva_delta", 0.3):
-        findings.append("Tendencia al alza: reconoce tus estrategias efectivas y repítelas esta semana.")
+        findings.append("¡Qué bien! Se nota una tendencia positiva estos días. Reconoce lo que te resultó y repítelo con calma.")
     if "autocuidado" in df.columns and df["autocuidado"].mean() < thresholds.get("autocuidado_media_min", 5):
-        findings.append("Autocuidado por debajo de lo deseado: elige una acción amable y concreta hoy (ducha, orden 5 min, paseo corto).")
+        findings.append("El autocuidado quedó un poco atrás. Elige una acción amable y concreta hoy (una ducha tranquila, ordenar 5 min, un paseo corto).")
     return findings
 
 def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
@@ -111,7 +111,7 @@ def build_messages_timeline(df: pd.DataFrame, days:int=7) -> str:
           <div class="msg-micro">💬 <em>{micro}</em></div>
         </div>
         """)
-    return "\n".join(cards) if cards else "<p class='muted'>No hay mensajes.</p>"
+    return " ".join(cards) if cards else "<p class='muted'>No hay mensajes.</p>"
 
 def generate_report_coach(input_csv: str, output_html: str, config: dict | None = None, start_date: str | None = None, end_date: str | None = None, tag_filter: str | None = None) -> str:
     df = pd.read_csv(input_csv, encoding="utf-8")
@@ -150,7 +150,7 @@ def generate_report_coach(input_csv: str, output_html: str, config: dict | None 
     imgs.append(simple_line_plot(dates, ordered["P_t"], "P_t (Prop/Claridad)", "z"))
     imgs.append(simple_line_plot(dates, ordered["C_t"], "C_t (Conexión)", "z"))
     imgs.append(simple_line_plot(dates, ordered["S_t_neg"], "S_t⁻ (Estrés invertido)", "z"))
-    imgs_html = "\n".join(imgs)
+    imgs_html = " ".join(imgs)
 
     small = ordered[["fecha","hora","H_t","V_t","C_t","P_t","S_t_neg","BDP_score","BDP_feno_0_3"]].copy()
     small["Estado"] = small["BDP_feno_0_3"].apply(icon_for_level)
