@@ -7,12 +7,14 @@ import numpy as np
 import pandas as pd
 import json
 import os
-import json
 import random
 
-# Cargar micro motivaciones desde archivo externo
-with open("reporte_python/micro_motivaciones.json", "r", encoding="utf-8") as f:
-    MICRO_MOTIVATIONS = json.load(f)
+areas = [("BDP_score", "BDP Score (Compuesto)"),
+        ("H_t", "H_t (Ánimo)"),
+        ("V_t", "V_t (Vitalidad)"),
+        ("P_t", "P_t (Propósito/Claridad)"),
+        ("C_t", "C_t (Conexión)"),
+        ("S_t_neg", "S_t⁻ (Estrés invertido)")]
 
 def zscore(series: pd.Series):
     s = series.astype(float)
@@ -46,6 +48,149 @@ def fig_to_base64(figure):
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("utf-8")
 
+
+def _numeric_x(dates):
+    # Convert datetime index to numeric days since first non-nan
+    import numpy as np
+    d = pd.to_datetime(dates)
+    mask = ~d.isna()
+    if not mask.any():
+        return np.arange(len(d)), mask
+    base = d[mask].iloc[0]
+    x = (d - base).dt.total_seconds() / (24*3600)
+    x = x.fillna(0).to_numpy()
+    return x, mask
+
+def compute_trend_metrics(dates, series):
+    """
+    Returns dict with slope_per_day, r2, delta_last3, delta_pct,
+    volatility (std), and n.
+    """
+    import numpy as np
+    s = pd.to_numeric(series, errors="coerce")
+    x, mask = _numeric_x(dates)
+    y = s.to_numpy()
+    y = np.where(np.isnan(y), np.nan, y)
+    valid = mask.to_numpy() & ~np.isnan(y)
+    n = int(valid.sum())
+    if n < 3:
+        return {"slope_per_day": 0.0, "r2": 0.0, "delta_last3": 0.0, "volatility": float(np.nan), "n": n}
+    xv, yv = x[valid], y[valid]
+    # Linear regression
+    slope, intercept = np.polyfit(xv, yv, 1)
+    yhat = slope * xv + intercept
+    ss_res = float(((yv - yhat) ** 2).sum())
+    ss_tot = float(((yv - yv.mean()) ** 2).sum())
+    r2 = 0.0 if ss_tot == 0 else max(0.0, 1 - ss_res / ss_tot)
+    # Delta last 3 vs first 3
+    first3 = float(pd.Series(yv).head(3).mean())
+    last3 = float(pd.Series(yv).tail(3).mean())
+    delta_last3 = last3 - first3
+    volatility = float(pd.Series(yv).std(ddof=0))
+    return {"slope_per_day": float(slope), "r2": float(r2), "delta_last3": float(delta_last3), "volatility": volatility, "n": n}
+
+def interpret_area(area_key: str, metrics: dict) -> tuple[str, str, str]:
+    """
+    Returns (technical, human) interpretation based on trend metrics.
+    """
+    slope = metrics.get("slope_per_day", 0.0)
+    r2 = metrics.get("r2", 0.0)
+    vol = metrics.get("volatility", 0.0)
+    n = metrics.get("n", 0)
+    # Thresholds (heuristic, z-units per day)
+    # Over ~7 days, 0.02 per day ~ 0.14 change, noticeable.
+    S_UP = 0.02
+    S_DOWN = -0.02
+    R_OK = 0.25
+    VOL_HIGH = 0.7  # z-level variability
+
+    arrow = "→"
+    label = "Estable"
+    if slope >= S_UP and r2 >= R_OK:
+        arrow = "↗"
+        label = "Tendencia al alza"
+    elif slope <= S_DOWN and r2 >= R_OK:
+        arrow = "↘"
+        label = "Tendencia a la baja"
+    elif abs(slope) < S_UP and vol is not None and vol >= VOL_HIGH:
+        arrow = "≈"
+        label = "Variable"
+
+    technical = f"{label} {arrow} · pendiente={slope:.3f} z/día · R²={r2:.2f} · n={n}"
+    # Human message per area
+    area_human = {
+        "BDP_score": {
+            "up": "Se ve una mejora general en tu balance. Reconoce lo que te ayudó y repítelo con suavidad.",
+            "down": "El balance se ve más desafiante. Quizá convenga reducir exigencias y priorizar descanso.",
+            "flat": "Tu balance se mantiene estable. Sostén hábitos que te hacen bien.",
+            "var": "El balance se ve cambiante. Rituales simples pueden darte anclaje."
+        },
+        "H_t": {
+            "up": "El ánimo muestra señales de mejora. Celebra pequeños momentos de claridad o calma.",
+            "down": "El ánimo parece decaer. Date espacio suave y busca algo que te reconforte.",
+            "flat": "Ánimo estable. Mantén los apoyos que te sirven.",
+            "var": "Ánimo variable. Respira y observa sin juicio; pasará."
+        },
+        "V_t": {
+            "up": "La vitalidad sube. Cuida el ritmo, evita sobrecargarte.",
+            "down": "La vitalidad baja. Prioriza sueño y pausas breves.",
+            "flat": "Energía estable. Sostén lo que te nutre.",
+            "var": "Energía cambiante. Ritmo amable y agua pueden ayudar."
+        },
+        "P_t": {
+            "up": "Más claridad/propósito. Aprovecha para ordenar prioridades.",
+            "down": "Menos claridad/propósito. Tareas pequeñas y concretas pueden ayudar.",
+            "flat": "Claridad estable. Mantén tu método actual.",
+            "var": "Claridad variable. Anotar antes de actuar puede ayudarte."
+        },
+        "C_t": {
+            "up": "Se fortalece la conexión. Alimenta los vínculos que te cuidan.",
+            "down": "Conexión a la baja. Busca apoyo seguro o un gesto de cercanía.",
+            "flat": "Conexión estable. Reconoce la red que ya tienes.",
+            "var": "Conexión variable. Límites y cuidado personal primero."
+        },
+        "S_t_neg": {
+            "up": "Estrés en descenso (mejor). Sostén micro-pausas.",
+            "down": "Estrés en alza. Baja el ritmo y pide apoyo cuando puedas.",
+            "flat": "Estrés estable. Protege tus espacios de pausa.",
+            "var": "Estrés variable. Pequeñas anclas pueden estabilizar."
+        }
+    }
+    key = "flat"
+    if label == "Tendencia al alza":
+        key = "up"
+    elif label == "Tendencia a la baja":
+        key = "down"
+    elif label == "Variable":
+        key = "var"
+    human = area_human.get(area_key, area_human["BDP_score"]).get(key, "Observa tu proceso con amabilidad.")
+    return technical, human, arrow
+
+def interpretative_plot(dates, series, title):
+    # Plot with regression line and return <img> HTML
+    import numpy as np
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.plot(dates, series, marker="o", linewidth=1)
+    # Trendline
+    x, mask = _numeric_x(dates)
+    y = pd.to_numeric(series, errors="coerce").to_numpy()
+    valid = mask.to_numpy() & ~np.isnan(y)
+    if valid.sum() >= 2:
+        slope, intercept = np.polyfit(x[valid], y[valid], 1)
+        xline = np.linspace(x[valid].min(), x[valid].max(), 50)
+        yline = slope * xline + intercept
+        # Convert xline back to datetimes for plotting
+        base = pd.to_datetime(dates)[mask].iloc[0]
+        dline = pd.to_datetime(base) + pd.to_timedelta(xline, unit="D")
+        ax.plot(dline, yline, linestyle="--")
+    ax.set_title(title)
+    ax.set_xlabel("Fecha")
+    ax.set_ylabel("z")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    encoded = fig_to_base64(fig)
+    return f'<img alt="{title}" src="data:image/png;base64,{encoded}"/>'
+
+
 def simple_line_plot(dates, values, title, ylabel):
     fig, ax = plt.subplots(figsize=(8, 3))
     ax.plot(dates, values)
@@ -61,8 +206,13 @@ def icon_for_level(x):
     return mapping.get(int(x), "⬜️ N/A")
 
 def micro_motivation(level:int) -> str:
-    frases = MICRO_MOTIVATIONS.get(str(level), ["Confía en tu proceso."])
-    return random.choice(frases)
+    phrases = {
+        0: "Hoy toca ir con mucha amabilidad: delega lo que puedas y pide apoyo.",
+        1: "Un paso pequeñito vale. No tiene que salir perfecto.",
+        2: "Sostén lo que te funciona. Constancia suave antes que intensidad.",
+        3: "Reconoce el avance de hoy. Anota un pequeño logro."
+    }
+    return phrases.get(int(level), "Sigue a tu ritmo: amabilidad primero.")
 
 
 def _pick_message(messages: dict, key: str, level: str, fallback: str) -> str:
@@ -259,6 +409,17 @@ def generate_report_coach(input_csv: str, output_html: str, config: dict | None 
     imgs.append(simple_line_plot(dates, ordered["C_t"], "C_t (Conexión)", "z"))
     imgs.append(simple_line_plot(dates, ordered["S_t_neg"], "S_t⁻ (Estrés invertido)", "z"))
     imgs_html = "\\n".join(imgs)
+    interp_rows = []
+    metrics = {k: compute_trend_metrics(dates, ordered[k]) for k, _ in areas}
+    for key, label in areas:
+        res = interpret_area(key, metrics[key])
+        if isinstance(res, tuple) and len(res) == 3:
+            tech, hum, arrow = res
+        else:
+            tech, hum = res
+            arrow = "→"
+        interp_rows.append(f"<tr><td><strong>{arrow} {label}</strong></td><td>{tech}</td><td>{hum}</td></tr>")
+    interp_table = "<table><thead><tr><th>Área</th><th>Interpretación técnica</th><th>Mensaje humano</th></tr></thead><tbody>" + "".join(interp_rows) + "</tbody></table>"
 
     small = ordered[["fecha","hora","H_t","V_t","C_t","P_t","S_t_neg","BDP_score","BDP_feno_0_3"]].copy()
     small["Estado"] = small["BDP_feno_0_3"].apply(icon_for_level)
@@ -309,6 +470,7 @@ def generate_report_coach(input_csv: str, output_html: str, config: dict | None 
     <div class="card">
       <h2>Tendencias</h2>
       {imgs_html}
+      <div style="margin-top:10px;">{interp_table}</div>
     </div>
 
     <div class="card">
