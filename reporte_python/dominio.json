@@ -1,0 +1,167 @@
+{
+  "dominios_humanizacion": {
+    "escala": "0-1",
+    "decimales": 2,
+    "formato_chip": "{codigo} ({nombre}): {valor} — {mensaje}",
+    "dominios": {
+      "H": {
+        "nombre": "Hedónico",
+        "icono": "😊",
+        "rangos": [
+          {
+            "etiqueta": "bajo",
+            "min": 0.0,
+            "max": 0.3,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Señales de bajo disfrute; cuida pequeños placeres."
+          },
+          {
+            "etiqueta": "intermedio",
+            "min": 0.3,
+            "max": 0.6,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "El ánimo fluctúa; reconoce los instantes agradables."
+          },
+          {
+            "etiqueta": "bueno",
+            "min": 0.6,
+            "max": 0.8,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Buen tono hedónico; conecta con lo que te hace bien."
+          },
+          {
+            "etiqueta": "muy_alto",
+            "min": 0.8,
+            "max": 1.0,
+            "min_inclusive": true,
+            "max_inclusive": true,
+            "mensaje": "Gran disfrute; recuerda sostener la calma también."
+          }
+        ]
+      },
+      "V": {
+        "nombre": "Vitalidad",
+        "icono": "⚡",
+        "rangos": [
+          {
+            "etiqueta": "baja",
+            "min": 0.0,
+            "max": 0.4,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Energía baja; prioriza descanso y autocuidado."
+          },
+          {
+            "etiqueta": "media",
+            "min": 0.4,
+            "max": 0.7,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Vitalidad aceptable; cuida tus ritmos."
+          },
+          {
+            "etiqueta": "alta",
+            "min": 0.7,
+            "max": 1.0,
+            "min_inclusive": true,
+            "max_inclusive": true,
+            "mensaje": "Energía alta; canalízala en movimiento equilibrado."
+          }
+        ]
+      },
+      "C": {
+        "nombre": "Conexión",
+        "icono": "🤝",
+        "rangos": [
+          {
+            "etiqueta": "baja",
+            "min": 0.0,
+            "max": 0.4,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Te sentirías aislado; busca un contacto significativo."
+          },
+          {
+            "etiqueta": "media",
+            "min": 0.4,
+            "max": 0.7,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Conexión intermedia; valora los vínculos presentes."
+          },
+          {
+            "etiqueta": "alta",
+            "min": 0.7,
+            "max": 1.0,
+            "min_inclusive": true,
+            "max_inclusive": true,
+            "mensaje": "Buen sostén relacional; nutre estos espacios."
+          }
+        ]
+      },
+      "P": {
+        "nombre": "Propósito/Flow",
+        "icono": "🎯",
+        "rangos": [
+          {
+            "etiqueta": "bajo",
+            "min": 0.0,
+            "max": 0.4,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Difícil hallar sentido; pasos pequeños en tareas simples ayudan."
+          },
+          {
+            "etiqueta": "medio",
+            "min": 0.4,
+            "max": 0.7,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Propósito en construcción; sostén lo claro y no fuerces."
+          },
+          {
+            "etiqueta": "alto",
+            "min": 0.7,
+            "max": 1.0,
+            "min_inclusive": true,
+            "max_inclusive": true,
+            "mensaje": "Buen sentido y claridad; aprovecha para avanzar en lo importante."
+          }
+        ]
+      },
+      "S-": {
+        "nombre": "Estrés invertido",
+        "icono": "🧘",
+        "rangos": [
+          {
+            "etiqueta": "bajo",
+            "min": 0.0,
+            "max": 0.4,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Estrés elevado; cuida pausas y respiración."
+          },
+          {
+            "etiqueta": "medio",
+            "min": 0.4,
+            "max": 0.7,
+            "min_inclusive": true,
+            "max_inclusive": false,
+            "mensaje": "Manejo aceptable del estrés; busca balance diario."
+          },
+          {
+            "etiqueta": "alto",
+            "min": 0.7,
+            "max": 1.0,
+            "min_inclusive": true,
+            "max_inclusive": true,
+            "mensaje": "Baja carga de estrés; fluye y aprovecha el respiro."
+          }
+        ]
+      }
+    }
+  }
+}
