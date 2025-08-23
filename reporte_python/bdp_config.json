@@ -3,38 +3,6 @@
     "footer_key": "Interpretación del día",
     "comparacion_key": "Comparación con el día anterior"
   },
-  "indices_mensajes": {
-    "AI": {
-      "moderado": "Señales ansiosas presentes: prueba 2-3 micro-pausas de respiración y baja estímulos.",
-      "alto": "Ansiedad elevada: respira 4-6, reduce demandas y prioriza 1-2 tareas simples."
-    },
-    "HI": {
-      "moderado": "Activación alta: canaliza energía en bloques breves y cierre suave del día.",
-      "alto": "Hipomanía probable: pauta contención (rutina, descanso, apoyo) y evita decisiones impulsivas."
-    },
-    "MI": {
-      "moderado": "Mixto: ánimo bajo con alta activación; usa ritmo lento y tareas muy acotadas.",
-      "alto": "Mixto intenso: prioriza autocuidado y contención; evita sobreexigirte hoy."
-    },
-    "ALI": {
-      "moderado": "Variación emocional marcada; usa anclajes y chequeos cada 2-3 horas.",
-      "alto": "Labilidad alta: estructura el día con pausas predefinidas y apoyos breves."
-    },
-    "IPI": {
-      "moderado": "Impulsividad presente: define límites ‘mínimos seguros’ y pospone decisiones.",
-      "alto": "Impulsividad elevada: aleja disparadores y busca apoyo antes de actuar."
-    },
-    "RI": {
-      "moderado": "Sensibilidad relacional: busca un contacto seguro y valida lo que sientes.",
-      "alto": "Conflicto relacional alto: limita exposición y prioriza autorregulación."
-    },
-    "SI": {
-      "ok": "Eutimia: reconoce lo que sostiene tu bienestar hoy."
-    }
-  },
-  "indices_prioridad": ["AI","HI","MI","ALI","IPI","RI","SI"],
-  "interpretacion_prioriza_indices": true,
-  "comparacion_menciona_indices": true,
   "umbrales": {
     "delta_significativo": 0.05,
     "delta_fuerte": 0.15,
@@ -93,19 +61,5 @@
     "glicemia_max_normal": 100,
     "glicemia_aceptable_diabetico_max": 179,
     "glicemia_alta_umbral": 180
-  },
-  "frases_generales": {
-    "sin_prev": "Primera medición del período: no hay día anterior para comparar.",
-    "sin_datos": "Hoy no hubo registros; se mantiene la última referencia conocida.",
-    "mejora_fuerte": "🌿 mejora marcada 🌿",
-    "mejora": "🌱 ligera mejora 🌱",
-    "estable": "✅ estable ✅",
-    "mixto": "⛅ cambios mixtos ⛅",
-    "empeora": "↘️ descenso leve ↘️",
-    "empeora_fuerte": "⛔ descenso significativo ⛔"
-  },
-  "umbrales_balance": { "delta_fuerte": 0.15, "delta_leve": 0.05 },
-  "locale": {
-    "decimal_comma": false
   }
 }
