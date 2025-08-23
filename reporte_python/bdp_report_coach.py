@@ -103,6 +103,61 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 # ------------------------ Helpers ------------------------
 
+# ------------ Índices: priorización e interpretación coherente ------------
+DESTAB = {"AI","HI","MI","ALI","IPI","RI"}
+
+def _indices_prioridad(cfg: Dict[str,Any]) -> list[str]:
+    return cfg.get("indices_prioridad", ["AI","HI","MI","ALI","IPI","RI","SI"])
+
+def _interp_from_indices(indices: list[Dict[str,Any]], fallback: str, cfg: Dict[str,Any]) -> str:
+    """Si hay desestabilizadores, usa su mensaje; si solo hay SI, usa su mensaje; si no, fallback."""
+    if not indices:
+        return fallback
+    by_id = {str(i.get("id")): i for i in indices if i and i.get("id")}
+    # prioriza (AI>HI>...>RI>SI)
+    for code in _indices_prioridad(cfg):
+        if code in by_id and code in DESTAB:
+            return by_id[code].get("mensaje", fallback)
+    if "SI" in by_id:
+        return by_id["SI"].get("mensaje", fallback)
+    return fallback
+
+def _nivel_from_idx(d: Dict[str,Any]) -> str | None:
+    lvl = d.get("nivel")
+    if isinstance(lvl, str) and lvl:
+        return lvl.lower()
+    return None  # si detect_indices no trae nivel, trabajamos por presencia
+
+def _comparacion_indices(prev_idx: list[Dict[str,Any]] | None,
+                         curr_idx: list[Dict[str,Any]] | None,
+                         cfg: Dict[str,Any]) -> str | None:
+    """Resume cambios de índices (emerge/cede/sube/baja/mantiene). Muestra 2–3 elementos máx."""
+    if curr_idx is None:
+        return None
+    prev_map = {str(i.get("id")): i for i in (prev_idx or []) if i and i.get("id")}
+    curr_map = {str(i.get("id")): i for i in (curr_idx or []) if i and i.get("id")}
+    out = []
+    for code in _indices_prioridad(cfg):
+        p = prev_map.get(code); c = curr_map.get(code)
+        if not p and not c: 
+            continue
+        if not p and c:
+            lvl = _nivel_from_idx(c)
+            out.append(f"{code}: emergió" + (f" ({lvl})" if lvl else ""))
+        elif p and not c:
+            out.append(f"{code}: cedió")
+        else:
+            lp, lc = _nivel_from_idx(p), _nivel_from_idx(c)
+            if lp and lc and lp != lc:
+                arrow = "subió" if (lp == "bajo" and lc in {"moderado","alto"} or lp=="moderado" and lc=="alto") else "bajó"
+                out.append(f"{code}: {arrow} a {lc}")
+            elif lc in {"moderado","alto"}:
+                out.append(f"{code}: se mantiene {lc}")
+    if not out:
+        return None
+    return "Índices: " + "; ".join(out[:3]) + "."
+
+
 # Áreas núcleo ponderadas para balance de bienestar (0..1); estrés resta.
 WEIGHTS_WB = {
     "animo": 0.27,
@@ -170,23 +225,6 @@ def _fmt_glic_chip(val: float, cfg: Dict[str,Any]) -> str:
     return f'<span class="chip">🩸 Glic. <span style="color:{col};font-weight:700">{v:.0f}</span> mg/dL</span>'
 
 
-def _movido_line(deltas: Dict[str,float], cfg: Dict[str,Any]) -> str:
-    thr = cfg["umbrales"]["delta_significativo"]
-    min_areas = cfg["umbrales"]["min_areas_para_movido"]
-    min_pct = cfg["umbrales"]["min_porcentaje_movido"]
-    core_deltas = {k: v for k, v in deltas.items() if k in CORE_AREAS}
-    cand = [a for a, v in core_deltas.items() if v == v and abs(float(v)) >= thr]
-    total = len(core_deltas)
-    if not cand:
-        return cfg["mensajes_movimiento"]["intro_menos_movido"]
-    is_movido = len(cand) >= min_areas or (len(cand)/max(1, total)) >= min_pct
-    if not is_movido:
-        return cfg["mensajes_movimiento"]["intro_menos_movido"]
-        cand_sorted = sorted(cand, key=lambda a: abs(core_deltas[a]), reverse=True)[:4]
-    # Etiquetas humanas + capitalización (Sueño, Ánimo, …)
-    pretty = [_title_es(x) for x in _labelize(cand_sorted)]
-    return cfg["mensajes_movimiento"]["intro_mas_movido"].format(areas_list=", ".join(pretty))
-
 CORE_AREAS = ["animo","activacion","sueno","conexion","proposito","claridad","estres"]
 
 # --- Comparación: métricas de contexto a listar (con íconos y etiquetas) ---
@@ -215,7 +253,10 @@ def _movido_line(deltas: Dict[str,float], cfg: Dict[str,Any]) -> str:
     if not is_movido:
         return cfg["mensajes_movimiento"]["intro_menos_movido"]
     cand_sorted = sorted(cand, key=lambda a: abs(core_deltas[a]), reverse=True)[:4]
-    return cfg["mensajes_movimiento"]["intro_mas_movido"].format(areas_list=", ".join(cand_sorted))
+    # Etiquetas humanas + capitalización (Sueño, Ánimo, …)
+    pretty = [_title_es(x) for x in _labelize(cand_sorted)]
+    return cfg["mensajes_movimiento"]["intro_mas_movido"].format(areas_list=", ".join(pretty))
+
 
 import unicodedata
 
@@ -527,19 +568,29 @@ def _render_card(day: Dict[str,Any], prev_real: Dict[str,Any] | None, cfg: Dict[
     if areas:
         prev_res = prev_real.get("resumen_areas") if prev_real else None
         indices = detect_indices({**areas, "__notas__": day.get("notas", [])}, prev_res)
+    # --- Índices (coherentes con áreas y notas) ---
+    indices = []
+    prev_res = prev_real.get("resumen_areas") if prev_real else None
+    if areas:
+        indices = detect_indices({**areas, "__notas__": day.get("notas", [])}, prev_res)
+
     if indices:
         html.append('<div class="section-title">📊 Índices clave</div>')
         html.append('<ul class="list notes">')
         for it in indices:
-            html.append(f'<li><strong>{it["id"]} ({it["nombre"]}):</strong> {it["mensaje"]}</li>')
+            # espero campos: id, nombre, mensaje (de detect_indices)
+            html.append(f'<li><strong>{it.get("id","")} ({it.get("nombre","")}):</strong> {it.get("mensaje","")}</li>')
         html.append('</ul>')
 
+    # --- Interpretación del día (cede a índices si hay desestabilizadores) ---
     inter = day.get("interpretacion_dia")
     if inter:
+        inter = _interp_from_indices(indices, inter, _load_config(None))
         html.append('<div class="footer">')
         html.append(f'<div><b>{_load_config(None)["nombres"]["footer_key"]}:</b> {inter}</div>')
         html.append('</div>')
 
+    # --- Comparación con el día anterior (frase general + movimiento + áreas + índices) ---
     comp = _comparacion(prev_real.get("resumen_areas") if prev_real else None, areas, _load_config(None))
     html.append('<div class="footer">')
     html.append(f'<div><b>{_load_config(None)["nombres"]["comparacion_key"]}:</b> {comp["frase_general"]}</div>')
@@ -550,6 +601,15 @@ def _render_card(day: Dict[str,Any], prev_real: Dict[str,Any] | None, cfg: Dict[
         for line in comp["lista_detalle_areas"][:6]:
             html.append(f'<li>{line}</li>')
         html.append('</ul>')
+
+    # línea extra: comparación de índices
+    prev_idx = []
+    if prev_res:
+        prev_idx = detect_indices({**prev_res, "__notas__": (prev_real.get("notas") or [])}, None)
+    idx_line = _comparacion_indices(prev_idx, indices, _load_config(None))
+    if idx_line:
+        html.append(f'<div class="muted">{idx_line}</div>')
+
     html.append(f'<div class="section-title">{comp["resumen_compuesto"]}</div>')
     html.append('</div>')  # footer
 
