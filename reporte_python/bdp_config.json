@@ -1,18 +1,79 @@
 {
-  "weights": {
-    "sueno_en_vitalidad": 1.2
+  "nombres": {
+    "footer_key": "Interpretación del día",
+    "comparacion_key": "Comparación con el día anterior"
   },
-  "thresholds": {
-    "animo_bajo_z": -0.3,
-    "animo_bajo_streak": 3,
-    "estres_alto_z": 0.6,
-    "estres_alto_ratio_min": 0.3,
-    "sueno_irregular_std_horas": 1.2,
-    "sueno_calidad_media_min": -0.2,
-    "tendencia_positiva_delta": 0.3,
-    "autocuidado_media_min": 5
+  "umbrales": {
+    "delta_significativo": 0.05,
+    "delta_fuerte": 0.15,
+    "min_areas_para_movido": 2,
+    "min_porcentaje_movido": 0.4
   },
-  "report": {
-    "days_window": 7
+  "peso_areas": {
+    "animo": 1.0,
+    "activacion": 1.0,
+    "sueno": 1.0,
+    "conexion": 1.0,
+    "proposito": 0.8,
+    "claridad": 1.0,
+    "estres": 1.2
+  },
+  "iconos_areas": {
+    "animo": "😊",
+    "activacion": "⚡",
+    "sueno": "🌙",
+    "conexion": "🤝",
+    "proposito": "🎯",
+    "claridad": "🔍",
+    "estres": "🔥"
+  },
+  "frases_generales": {
+    "sin_prev": "Primera medición del período: no hay día anterior para comparar.",
+    "sin_datos": "Hoy no hubo registros; se mantiene la última referencia conocida.",
+    "mejora": "En comparación al día de ayer, tu día mostró una <strong>mejora general</strong>.",
+    "empeora": "En comparación al día de ayer, tu día tuvo <strong>mayor dificultad</strong>.",
+    "estable": "Comparado con ayer, el panorama se mantuvo <strong>relativamente estable</strong>.",
+    "mixto": "Hubo <strong>cambios mixtos</strong> respecto a ayer: mejoras en algunas áreas y retrocesos en otras."
+  },
+  "mensajes_movimiento": {
+    "intro_mas_movido": "En comparación al día de ayer, tu día estuvo <strong>más movido</strong> por: {areas_list}.",
+    "intro_menos_movido": "Respecto a ayer, hoy se percibe <strong>menos movimiento</strong> general."
+  },
+  "plantillas_detalle": {
+    "area_mejora_fuerte": "{icon} {area}: <strong>subió mucho</strong> (Δ +{delta}).",
+    "area_mejora": "{icon} {area}: <strong>subió</strong> (Δ +{delta}).",
+    "area_empeora_fuerte": "{icon} {area}: <strong>bajó mucho</strong> (Δ −{delta}).",
+    "area_empeora": "{icon} {area}: <strong>bajó</strong> (Δ −{delta}).",
+    "area_estable": "{icon} {area}: <strong>estable</strong> (Δ {delta}).",
+    "estres_disminuye": "{icon} Estrés: <strong>disminuyó</strong> (Δ −{delta}), lo cual favorece el balance.",
+    "estres_aumenta": "{icon} Estrés: <strong>aumentó</strong> (Δ +{delta}), podría influir en la percepción general."
+  },
+  "render": {
+    "mostrar_contexto": true,
+    "rango_glicemia": [
+      70,
+      140
+    ]
+  },
+  "dominios_config": { "areas_escala": "0-10", "estres_input_invertido": false },
+  "metabolico": {
+    "es_diabetico": true,
+    "glicemia_max_normal": 100,
+    "glicemia_aceptable_diabetico_max": 179,
+    "glicemia_alta_umbral": 180
+  },
+  "frases_generales": {
+    "sin_prev": "Primera medición del período: no hay día anterior para comparar.",
+    "sin_datos": "Hoy no hubo registros; se mantiene la última referencia conocida.",
+    "mejora_fuerte": "🌿 mejora marcada 🌿",
+    "mejora": "🌱 ligera mejora 🌱",
+    "estable": "✅ estable ✅",
+    "mixto": "⛅ cambios mixtos ⛅",
+    "empeora": "↘️ descenso leve ↘️",
+    "empeora_fuerte": "⛔ descenso significativo ⛔"
+  },
+  "umbrales_balance": { "delta_fuerte": 0.15, "delta_leve": 0.05 },
+  "locale": {
+    "decimal_comma": false
   }
 }

@@ -4,73 +4,126 @@ from typing import Dict, Any
 import json
 from pathlib import Path
 import math
+import pandas as pd
 
-# Load dominio.json sitting next to this file
-_CFG_PATH = Path(__file__).parent / "dominio.json"
-with open(_CFG_PATH, "r", encoding="utf-8") as f:
+# Carga humanización de dominios
+CFG_DOM = Path(__file__).parent / "dominio.json"
+with open(CFG_DOM, "r", encoding="utf-8") as f:
     DOM_CFG = json.load(f)["dominios_humanizacion"]
 
-def _mean(vals):
-    nums = [float(v) for v in vals if v is not None and not (isinstance(v, float) and math.isnan(v))]
-    return sum(nums) / len(nums) if nums else float("nan")
+DECIMALES = int(DOM_CFG.get("decimales", 2))
 
-def _wmean(pairs: Dict[str, float], row: Dict[str, float]):
-    num = 0.0
-    den = 0.0
-    for k, w in pairs.items():
-        v = row.get(k)
-        if v is None or (isinstance(v, float) and math.isnan(v)): 
-            continue
-        num += float(v) * float(w)
-        den += float(w)
-    return num / den if den > 0 else float("nan")
+# Carga config general para dominios (inversión de estrés, etc.)
+CFG_GEN = Path(__file__).parent / "bdp_config.json"
+try:
+    _GEN = json.loads(CFG_GEN.read_text(encoding="utf-8"))
+    _ESTRES_INPUT_INVERTIDO = bool(_GEN.get("dominios_config", {}).get("estres_input_invertido", False))
+except Exception:
+    _ESTRES_INPUT_INVERTIDO = False  # por defecto asumimos estrés "alto=peor" (no invertido)
 
-def compute_dominios(row: Dict[str, float]) -> Dict[str, float]:
-    """
-    row: dict con áreas diarias promedio (0..1): animo, activacion, sueno, conexion, proposito, claridad, estres
-    return: dict con H, V, C, P, S-
-    """
-    H = _mean([row.get("animo")])
-    V = _wmean({"activacion": 0.5, "sueno": 0.5}, row)
-    C = _mean([row.get("conexion")])
-    P = _wmean({"proposito": 0.6, "claridad": 0.4}, row)
-    estres = row.get("estres")
-    S_inv = (1.0 - float(estres)) if (estres is not None and not (isinstance(estres, float) and math.isnan(estres))) else float("nan")
+# Añade cerca del inicio:
+CORE_KEYS = ["animo","activacion","sueno","conexion","proposito","claridad","estres"]
+
+def _infer_scale(row: dict) -> str:
+    # Si alguna área del día > 1.5 asumimos 0–10 para TODO el día
+    for k in CORE_KEYS:
+        try:
+            if float(row.get(k, 0)) > 1.5:
+                return "0-10"
+        except Exception:
+            pass
+    return "0-1"
+
+def _normalize_ctx(v, scale: str):
+    if v is None: return float("nan")
+    try:
+        x = float(v)
+    except Exception:
+        return float("nan")
+    if scale == "0-10":
+        x = x / 10.0
+    elif x > 10.5:
+        x = x / 100.0
+    return max(0.0, min(1.0, x))
+
+
+def _normalize01(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return float("nan")
+    try:
+        x = float(v)
+    except Exception:
+        return float("nan")
+    if x > 1.5 and x <= 10.5:
+        x = x / 10.0
+    elif x > 10.5:
+        x = x / 100.0
+    return max(0.0, min(1.0, x))
+
+def compute_dominios_from_row(row: Dict[str, Any]) -> Dict[str, float]:
+    """Calcula H, V, C, P, S- a partir de áreas ya promediadas del día."""
+    scale = _infer_scale(row)
+
+    def g(k): return _normalize_ctx(row.get(k), scale)
+
+    animo      = g("animo")
+    activacion = g("activacion")
+    sueno      = g("sueno")
+    conexion   = g("conexion")
+    proposito  = g("proposito")
+    claridad   = g("claridad")
+    estres     = g("estres")
+
+    def mean(vals):
+        vals = [x for x in vals if x is not None and not (isinstance(x,float) and math.isnan(x))]
+        return sum(vals)/len(vals) if vals else float("nan")
+    def wmean(pairs):
+        vals = [(v,w) for (v,w) in pairs if v is not None and not (isinstance(v,float) and math.isnan(v))]
+        sw = sum(w for _,w in vals)
+        return sum(v*w for v,w in vals)/sw if vals and sw>0 else float("nan")
+
+    H = mean([animo])
+    V = wmean([(activacion,0.5),(sueno,0.5)])
+    C = mean([conexion])
+    P = wmean([(proposito,0.6),(claridad,0.4)])
+
+    # Estrés invertido S-: si la entrada ya es "bajo=mejor", entonces S- = estrés_promedio;
+    # si la entrada es "alto=peor", entonces S- = 1 - estrés_promedio.
+    if estres == estres:  # not NaN
+        if _ESTRES_INPUT_INVERTIDO:
+            S_inv = estres   # ya invertido en la entrada (alto = menos estrés)
+        else:
+            S_inv = 1.0 - estres
+    else:
+        S_inv = float("nan")
+
+    S_inv = (1.0 - estres) if estres == estres and not _ESTRES_INPUT_INVERTIDO else estres
+    
     return {"H": H, "V": V, "C": C, "P": P, "S-": S_inv}
 
-def interpret_dominios(dom_values: Dict[str, float], cfg: Dict[str, Any] = None) -> Dict[str, Dict[str, Any]]:
-    """
-    dom_values: dict H,V,C,P,S-
-    return: dict {code: {"valor": float, "mensaje": str, "nombre": str, "icono": str}}
-    """
-    cfg = cfg or DOM_CFG
-    dec = int(cfg.get("decimales", 2))
-    out: Dict[str, Dict[str, Any]] = {}
-    dominios = cfg["dominios"]
-    for code, meta in dominios.items():
-        v = dom_values.get(code)
-        nombre = meta.get("nombre", code)
-        icono = meta.get("icono", "")
-        msg = ""
-        # pick range
-        for r in meta.get("rangos", []):
-            lo, hi = float(r["min"]), float(r["max"])
-            lo_ok = (v >= lo) if r.get("min_inclusive", True) else (v > lo)
-            hi_ok = (v <= hi) if r.get("max_inclusive", False) else (v < hi)
-            if v is not None and not (isinstance(v, float) and math.isnan(v)) and lo_ok and hi_ok:
-                msg = r["mensaje"]
-                break
-        out[code] = {
-            "valor": None if v is None or (isinstance(v, float) and math.isnan(v)) else round(float(v), dec),
-            "mensaje": msg,
-            "nombre": nombre,
-            "icono": icono,
-        }
-    return out
+def _humanize_single(code: str, value: float, cfg: Dict[str, Any]) -> str:
+    doms = cfg["dominios"]
+    if code not in doms or value is None or (isinstance(value,float) and pd.isna(value)):
+        return f"{code}: — sin datos"
+    spec = doms[code]
+    nombre = spec.get("nombre", code)
+    icono = spec.get("icono", "")
+    msg = "— sin datos"
+    for r in spec.get("rangos", []):
+        lo, hi = float(r["min"]), float(r["max"])
+        lo_inc = bool(r.get("min_inclusive", True))
+        hi_inc = bool(r.get("max_inclusive", True))
+        ok_lo = (value > lo) or (lo_inc and abs(value - lo) < 1e-9) or (value == lo if lo_inc else False)
+        ok_hi = (value < hi) or (hi_inc and abs(value - hi) < 1e-9) or (value == hi if hi_inc else False)
+        if ok_lo and ok_hi:
+            msg = r.get("mensaje", msg)
+            break
+    val_txt = f"{value:.{DECIMALES}f}"
+    return f"{code} ({nombre}): {val_txt} — {msg}"
 
-def format_chip(code: str, info: Dict[str, Any], cfg: Dict[str, Any] = None) -> str:
-    cfg = cfg or DOM_CFG
-    plantilla = cfg.get("formato_chip", "{codigo} ({nombre}): {valor} — {mensaje}")
-    val = info.get("valor")
-    sval = "—" if val is None else f"{val:.{int(cfg.get('decimales',2))}f}"
-    return plantilla.format(codigo=code, nombre=info.get("nombre",""), valor=sval, mensaje=info.get("mensaje",""))
+def interpret_dominios(dom_values: Dict[str, float]) -> Dict[str, str]:
+    """Devuelve un dict code -> string humanizada usando dominio.json."""
+    out = {}
+    for k, v in dom_values.items():
+        out[k] = _humanize_single(k, v, DOM_CFG)
+    return out
