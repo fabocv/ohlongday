@@ -2,3 +2,5 @@
 *.pyc
 output/*
 __pycache__
+bdp_personal.csv
+outputs

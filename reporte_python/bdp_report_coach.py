@@ -594,4 +594,4 @@ def generate_report_coach(input_csv: str,
     with open(output_html, "w", encoding="utf-8") as f:
         f.write(final_html)
 
-    return os.path.abspath(output_html)
+    return df, cards
