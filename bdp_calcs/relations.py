@@ -6,6 +6,95 @@ from typing import List, Dict, Any
 
 CORE_DEFAULT = ["animo","claridad","estres","activacion"]
 
+# 1) Helpers (ponlas cerca de otras utils en relations.py)
+def _recent_zero(df, col, days=3, row_idx=-1):
+    """¿Los últimos `days` registros de `col` son 0 (o NaN tratado como 0)?"""
+    if col not in df.columns or len(df) < 2:
+        return False
+    end = len(df) if row_idx == -1 else row_idx + 1
+    start = max(0, end - days)
+    s = pd.to_numeric(df[col].iloc[start:end], errors="coerce").fillna(0)
+    return bool((s == 0).all() and len(s) > 0)
+
+def _parse_decimal_series(s):
+    # por si hay decimales con coma ("1,2")
+    if s.dtype == "O":
+        try:
+            return pd.to_numeric(s.str.replace(",", ".", regex=False), errors="coerce")
+        except Exception:
+            return pd.to_numeric(s, errors="coerce")
+    return pd.to_numeric(s, errors="coerce")
+
+def _humanize_feature(name, df=None, row_idx=-1):
+    """Mapea nombres técnicos a lenguaje humano considerando contexto (consumo=0, timing, etc.)."""
+    n = name or ""
+    # Normaliza alias frecuentes en tu dataset
+    pretty_map = {
+        "sueno_calidad_calc": "calidad de sueño (calculada)",
+        "sleep_efficiency": "eficiencia de sueño",
+        "horas_sueno": "horas de sueño",
+        "glicemia": "glicemia",
+        "meditacion_min": "respiración/meditación",
+        "exposicion_sol_min": "exposición al sol",
+        "mov_intensidad": "movimiento (intensidad)",
+        "tiempo_pantalla_noche_min": "pantalla en la noche",
+        "cafe_cucharaditas": "cafeína",
+        "alcohol_ud": "alcohol",
+        # algunos derivados que puedas tener:
+        "alcohol_timing_score": "alcohol (timing)",
+        "screen_night_score": "pantalla de noche (timing)",
+        "morning_light_score": "luz de mañana (timing)",
+    }
+    # si coincide exactamente
+    if n in pretty_map:
+        base = pretty_map[n]
+    else:
+        # por prefijos:
+        if n.startswith("cafe_"):
+            base = "cafeína"
+        elif n.startswith("alcohol_"):
+            base = "alcohol"
+        elif n.startswith("exposicion_sol_"):
+            base = "exposición al sol"
+        elif n.startswith("meditacion_"):
+            base = "respiración/meditación"
+        elif n.startswith("mov_"):
+            base = "movimiento"
+        else:
+            base = n.replace("_", " ")
+
+    # Contexto específico: si es alcohol* y no hubo consumo reciente → narrar “ausencia/buen timing”
+    if df is not None and "alcohol" in n:
+        # chequea cero consumo en últimos 3 días
+        cero = _recent_zero(df, "alcohol_ud", days=3, row_idx=row_idx)
+        # opcional: si tienes 'alcohol_ultima_hora', úsalo como timing (más alto = más lejos)
+        if cero:
+            if "timing" in base or "ultima_hora" in n:
+                return "buen timing respecto al alcohol"
+            else:
+                return "ausencia de alcohol"
+        else:
+            # hubo consumo: si el driver es 'timing' y es positivo, dilo como “alejado de la noche”
+            if "timing" in base or "ultima_hora" in n:
+                return "alcohol más alejado de la noche"
+            return base
+
+    # Cafeína: si hoy y ayer fueron 0 cucharaditas, interpreta como “baja cafeína”
+    if df is not None and ("cafe_" in n or "cafeína" in base):
+        cero_cafe = _recent_zero(df, "cafe_cucharaditas", days=2, row_idx=row_idx)
+        if cero_cafe:
+            return "baja cafeína"
+        return base
+
+    # Pantalla noche: si tienes tiempo_pantalla_noche_min = 0 últimos días → “baja pantalla nocturna”
+    if df is not None and ("pantalla" in base or "screen" in n):
+        col = "tiempo_pantalla_noche_min"
+        if col in df.columns and _recent_zero(df, col, days=2, row_idx=row_idx):
+            return "baja pantalla en la noche"
+
+    return base
+
+
 def _z(s: pd.Series) -> pd.Series:
     s = pd.to_numeric(s, errors="coerce")
     m, v = s.mean(), s.std()
@@ -325,8 +414,16 @@ def descriptive_summary(df: pd.DataFrame, targets: List[str] = None, row_idx: in
                 res = drivers_del_dia(df, t, top_k=top_k, row_idx=row_idx)
                 tab = res.get("tabla")
                 if isinstance(tab, pd.DataFrame) and not tab.empty:
+                    # 2) Dentro de descriptive_summary(...) donde hoy generas pos/neg:
                     pos = tab.sort_values("contrib", ascending=False).head(top_k)["feature"].tolist()
                     neg = tab.sort_values("contrib", ascending=True).head(top_k)["feature"].tolist()
+
+                    # Reemplaza los nombres crudos por humanizados con contexto real:
+                    pos_h = ", ".join(_humanize_feature(x, df=df, row_idx=row_idx) for x in pos) if pos else "—"
+                    neg_h = ", ".join(_humanize_feature(x, df=df, row_idx=row_idx) for x in neg) if neg else "—"
+
+                    reasons.append(f"{pretty.get(t,t).capitalize()}: apoyaron {pos_h}; restaron {neg_h}.")
+
                     # human labels
                     def hum(n): return _humanize_feature(n)
                     pos_h = ", ".join(hum(x) for x in pos) if pos else "—"
@@ -380,7 +477,7 @@ def descriptive_summary(df: pd.DataFrame, targets: List[str] = None, row_idx: in
 
     # Armar texto
     out = []
-    out.append(f"{pd.to_datetime(df['fecha'], errors='coerce').dt.strftime('%d-%m-%Y (%a)').iloc[row_idx] if 'fecha' in df.columns else str(df.index[row_idx])}: su bienestar compuesto está {wb_lbl}.")
+    out.append(f"{pd.to_datetime(df['fecha'], dayfirst=True, errors='coerce').dt.strftime('%d-%m-%Y (%a)').iloc[row_idx] if 'fecha' in df.columns else str(df.index[row_idx])}: su bienestar compuesto está {wb_lbl}.")
     if tgt_lines:
         out.append("Por targets: " + "; ".join(tgt_lines) + ".")
     if reasons:

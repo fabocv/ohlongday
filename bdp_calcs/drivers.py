@@ -11,7 +11,9 @@ MODIFIABLE_PREFIXES = [
     "cafe_","alcohol_","stimulant_load","hydration_score","agua_litros","alimentacion",
     "movement_score","relaxation_score","morning_light_score","screen_night_score","exposicion_sol_","meditacion_","mov_",
     "social_","stressors_","estres_",
-    "has_","adherencia_med",
+    "has_","adherencia_med","meditacion_", "exposicion_sol_", "mov_", "movimiento",
+    "cafe_", "alcohol_", "glicemia", "agua_litros", "alimentacion",
+    "tiempo_pantalla_noche_", "despertares_", "interacciones_"
 ]
 
 HUMAN_LABELS = [
@@ -173,11 +175,13 @@ def drivers_del_dia(df: pd.DataFrame, target: str, top_k: int = 3, row_idx: int 
     # Δ del día a explicar: row_idx - (row_idx-1)
     X_today = X.iloc[row_idx][dX.columns]
     X_prev  = X.iloc[row_idx-1][dX.columns]
-    dx = (X_today - X_prev).fillna(med).to_numpy().reshape(1, -1)
-    dx_s = ss.transform(dx)
+    # alinear, conservar nombres y transformar con DataFrame
+    dx_series = (X_today - X_prev).reindex(dX.columns).fillna(med)
+    dx_df = pd.DataFrame([dx_series.values], columns=dX.columns)
+    dz = ss.transform(dx_df).ravel()
+
 
     betas = lr.coef_.ravel()
-    dz = dx_s.ravel()
 
     contrib = [(col, float(b)*float(z)) for col, b, z in zip(dX.columns, betas, dz) if np.isfinite(b) and np.isfinite(z)]
     contrib_df = pd.DataFrame(contrib, columns=["feature","contrib"]).sort_values("contrib", ascending=False)
