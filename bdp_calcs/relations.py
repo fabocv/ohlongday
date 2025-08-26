@@ -499,8 +499,8 @@ def descriptive_summary(df: pd.DataFrame, targets: List[str] = None, row_idx: in
             ctx += f"; interacciones: {interac_txt}"
         out.append("Contexto: " + ctx + ".")
     if recs:
-        out.append("Se recomienda: " + " ".join(recs))
+        out.append("<br>Se recomienda: " + " ".join(recs))
     if therapist_msgs:
-        out.append("Mensaje para terapeuta: " + " ".join(therapist_msgs))
+        out.append("<br>Mensaje para terapeuta: " + " ".join(therapist_msgs))
 
     return " ".join(out)

@@ -130,13 +130,14 @@ def df_to_table(dfx: pd.DataFrame):
     </table>
     """
 
-def build_ema_report(df, targets=targets):
+def build_ema_report(df, target_email, targets=targets,row_idx=-1):
+    df = df[df["correo"] == target_email]
     # Deltas for cards
     deltas = {t: last_delta(df[t]) if t in df.columns else float("nan") for t in targets}
 
     # Build report pieces
     short_sum = narrative_summary(df, targets=targets, top_k=3)
-    verbose_sum = descriptive_summary(df, targets=targets, row_idx=-1, top_k=2)
+    verbose_sum = descriptive_summary(df, targets=targets, row_idx=row_idx, top_k=2)
     wb = wellbeing_index(df, targets=targets)
     wb_last = float(wb.iloc[-1]) if len(wb.dropna()) else float("nan")
 
@@ -204,7 +205,7 @@ def build_ema_report(df, targets=targets):
             <div class="h1">Informe BDP <span class="chip">EMA</span></div>
             <div class="sub">{(pd.to_datetime(df['fecha'], dayfirst=True, errors='coerce').dt.strftime('%d-%m-%Y (%a)').iloc[-1] if 'fecha' in df.columns else str(df.index[-1]))} • Índice de bienestar (WB) último: {wb_last_str}</div>
         </div>
-        <div class="sub">Generado: {datetime.now().strftime("%d-%m-%Y %H:%M")}</div>
+        <div class="sub">Generado: {datetime.now().strftime("%d-%m-%Y %H:%M")} <br>para {target_email}</div>
         </div>
 
         <div class="grid">
