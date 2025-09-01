@@ -12,6 +12,7 @@ from reporte_python.bdp_cards import build_daily_cards
 from reporte_python.bdp_dominios import compute_dominios_from_row, interpret_dominios
 from reporte_python.bdp_messages import stack_human_messages
 from reporte_python.bdp_indices import detect_indices
+from reporte_python.helpers import _resolve_columns
 
 
 # ------------------------ Overview (Resumen de días) ------------------------
@@ -134,45 +135,6 @@ def _load_config(config: Dict[str,Any] | None) -> Dict[str,Any]:
     return base or {}
 
 import unicodedata
-
-def _norm(s: str) -> str:
-    if s is None: return ""
-    s = str(s)
-    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
-    return s.strip().lower()
-
-def _resolve_columns(df: pd.DataFrame, expected: Dict[str,str]) -> pd.DataFrame:
-    """
-    Intenta mapear/renombrar columnas reales a los nombres esperados en DEFAULT_COLUMNS,
-    usando comparación insensible a mayúsculas/acentos/espacios.
-    No elimina columnas; sólo renombra si encuentra equivalentes.
-    """
-    if df is None or df.empty:
-        return df
-    # Normaliza encabezados reales
-    real_cols = list(df.columns)
-    norm_to_real = {_norm(c): c for c in real_cols}
-    rename_map = {}
-    for k, exp in expected.items():
-        if not isinstance(exp, str): 
-            continue
-        if exp in df.columns:
-            continue  # ya está
-        # buscar por forma normalizada
-        real = norm_to_real.get(_norm(exp))
-        if real:
-            rename_map[real] = exp
-        else:
-            # sinónimo básico para fecha
-            if k == "fecha":
-                for alt in ["fecha", "fechas", "dia", "día", "date", "fecha_registro"]:
-                    real = norm_to_real.get(_norm(alt))
-                    if real and real not in rename_map:
-                        rename_map[real] = exp
-                        break
-    if rename_map:
-        df = df.rename(columns=rename_map)
-    return df
 
 # ------------------------ HTML base ------------------------
 

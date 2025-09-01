@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 BDP Baseline Pipeline (EMA + Predicción + Importancias)
-Autor: ChatGPT (para Fab)
 Fecha: 2025-08-24
 
 Descripción:
@@ -64,12 +63,18 @@ EMA_MIN_PERIODS = 7  # warm-up
 
 # Columnas esperadas (no es obligatorio tener todas)
 EXPECTED_COLS = [
-    "fecha", "hora", "animo", "activacion", "conexion", "proposito", "claridad",
-    "estres", "sueno_calidad", "horas_sueno", "siesta_min", "autocuidado",
-    "alimentacion", "movimiento", "dolor_fisico", "ansiedad", "irritabilidad",
-    "meditacion_min", "exposicion_sol_min", "agua_litros", "cafe_cucharaditas",
-    "alcohol_ud", "medicacion_tomada", "medicacion_tipo", "otras_sustancias",
-    "interacciones_significativas", "eventos_estresores", "tags", "notas", "glicemia"
+    'animo', 'correo', 'activacion', 'conexion',
+       'proposito', 'claridad', 'estres', 'sueno_calidad', 'hora_dormir',
+       'hora_despertar', 'despertares_nocturnos', 'cafe_ultima_hora',
+       'alcohol_ultima_hora', 'exposicion_sol_manana_min', 'mov_intensidad',
+       'interacciones_calidad', 'tiempo_pantalla_noche_min',
+       'tiempo_ejercicio', 'glicemia', 'autocuidado', 'ansiedad',
+       'alimentacion', 'siesta_min', 'movimiento', 'irritabilidad',
+       'meditacion_min', 'agua_litros', 'cafe_cucharaditas', 'alcohol_ud',
+       'otras_sustancias', 'medicacion_tipo', 'medicacion_tomada',
+       'exposicion_sol_min', 'dolor_fisico', 'eventos_estresores', 'tags',
+       'notas', 'tiempo_pantallas', 'interacciones_significativas', 'fecha',
+       'hora'
 ]
 
 # Objetivos principales

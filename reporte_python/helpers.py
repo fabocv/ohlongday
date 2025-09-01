@@ -2,6 +2,49 @@
 import os, tempfile, re
 import pandas as pd
 import numpy as np
+import unicodedata
+from typing import List, Dict, Any
+
+def _norm(s: str) -> str:
+    if s is None: return ""
+    s = str(s)
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    return s.strip().lower()
+
+
+def _resolve_columns(df: pd.DataFrame, expected: Dict[str,str]) -> pd.DataFrame:
+    """
+    Intenta mapear/renombrar columnas reales a los nombres esperados en DEFAULT_COLUMNS,
+    usando comparación insensible a mayúsculas/acentos/espacios.
+    No elimina columnas; sólo renombra si encuentra equivalentes.
+    """
+    if df is None or df.empty:
+        return df
+    # Normaliza encabezados reales
+    real_cols = list(df.columns)
+    norm_to_real = {_norm(c): c for c in real_cols}
+    rename_map = {}
+    for k, exp in expected.items():
+        if not isinstance(exp, str): 
+            continue
+        if exp in df.columns:
+            continue  # ya está
+        # buscar por forma normalizada
+        real = norm_to_real.get(_norm(exp))
+        if real:
+            rename_map[real] = exp
+        else:
+            # sinónimo básico para fecha
+            if k == "fecha":
+                for alt in ["fecha", "fechas", "dia", "día", "date", "fecha_registro"]:
+                    real = norm_to_real.get(_norm(alt))
+                    if real and real not in rename_map:
+                        rename_map[real] = exp
+                        break
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    return df
+
 
 # Soporta '10:00:00 a. m.' / '9:30 p. m.' / '09:30' / '930' / '7.5' → 'HH:MM'
 def _coerce_hhmm_latam_ampm(s: pd.Series) -> pd.Series:

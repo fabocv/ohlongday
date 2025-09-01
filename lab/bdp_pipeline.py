@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 BDP Baseline Pipeline (EMA + Predicción + Importancias)
-Autor: ChatGPT (para Fab)
 Fecha: 2025-08-24
 
 Descripción:
@@ -67,12 +66,18 @@ EMA_MIN_PERIODS = 7  # warm-up
 
 # Columnas esperadas (no es obligatorio tener todas)
 EXPECTED_COLS = [
-    "fecha", "hora", "animo", "activacion", "conexion", "proposito", "claridad",
-    "estres", "sueno_calidad", "horas_sueno", "siesta_min", "autocuidado",
-    "alimentacion", "movimiento", "dolor_fisico", "ansiedad", "irritabilidad",
-    "meditacion_min", "exposicion_sol_min", "agua_litros", "cafe_cucharaditas",
-    "alcohol_ud", "medicacion_tomada", "medicacion_tipo", "otras_sustancias",
-    "interacciones_significativas", "eventos_estresores", "tags", "notas", "glicemia"
+    'animo', 'correo', 'activacion', 'conexion',
+       'proposito', 'claridad', 'estres', 'sueno_calidad', 'hora_dormir',
+       'hora_despertar', 'despertares_nocturnos', 'cafe_ultima_hora',
+       'alcohol_ultima_hora', 'exposicion_sol_manana_min', 'mov_intensidad',
+       'interacciones_calidad', 'tiempo_pantalla_noche_min',
+       'tiempo_ejercicio', 'glicemia', 'autocuidado', 'ansiedad',
+       'alimentacion', 'siesta_min', 'movimiento', 'irritabilidad',
+       'meditacion_min', 'agua_litros', 'cafe_cucharaditas', 'alcohol_ud',
+       'otras_sustancias', 'medicacion_tipo', 'medicacion_tomada',
+       'exposicion_sol_min', 'dolor_fisico', 'eventos_estresores', 'tags',
+       'notas', 'tiempo_pantallas', 'interacciones_significativas', 'fecha',
+       'hora'
 ]
 
 # Objetivos principales
@@ -133,6 +138,77 @@ def parse_datetime(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values("dt").drop_duplicates(subset=["dt"], keep="last").reset_index(drop=True)
     return df
 
+def _extract_baselines_for_target(metrics_df: pd.DataFrame) -> dict:
+    """
+    Lee MAE/RMSE de 'BaselineEMA14' y 'BaselineNaive' si existen en metrics_df.
+    Retorna dict con mae/rmse de cada baseline o None si no están.
+    """
+    out = {"ema": None, "naive": None}
+    if metrics_df is None or metrics_df.empty:
+        return out
+    def _get(name):
+        row = metrics_df[metrics_df["model"] == name]
+        return {"mae": float(row.iloc[0]["mae"]), "rmse": float(row.iloc[0]["rmse"])} if len(row) else None
+    out["ema"] = _get("BaselineEMA14")
+    out["naive"] = _get("BaselineNaive")
+    return out
+
+def _blend_policy_from_metrics(metrics_df: pd.DataFrame, n_samples: int, n_splits: int) -> dict:
+    """
+    Construye una política de mezcla (pesos) por target:
+      - Compara mejor modelo vs EMA14 (si existe).
+      - Ajusta confianza por n_splits y n_samples.
+    Retorna: {target: {best_model, mae_model, mae_ema, improv_pct, weights:{model, ema}}}
+    """
+    policy = {}
+    for tgt in metrics_df["target"].unique():
+        sub = metrics_df[metrics_df["target"] == tgt].sort_values("mae")
+        best = sub.iloc[0]  # mejor por MAE (puede ser modelo o baseline si no filtras)
+        best_name = str(best["model"])
+        best_mae = float(best["mae"])
+        # preferimos el mejor NO-baseline para pronóstico
+        nb = sub[~sub["model"].str.contains("Baseline")].sort_values("mae")
+        if len(nb) > 0:
+            best_name = str(nb.iloc[0]["model"])
+            best_mae = float(nb.iloc[0]["mae"])
+
+        baselines = _extract_baselines_for_target(sub)
+        mae_ema = baselines["ema"]["mae"] if baselines["ema"] else None
+
+        # mejora relativa vs EMA
+        improv = None
+        if mae_ema is not None and mae_ema > 0:
+            improv = (mae_ema - best_mae) / mae_ema  # 0.20 = 20% mejor que EMA
+
+        # pesos base
+        if improv is None:
+            w_model = 0.55  # sin EMA para comparar → mezcla tibia
+        elif improv >= 0.20:
+            w_model = 0.70
+        elif improv >= 0.10:
+            w_model = 0.60
+        elif improv >= 0.05:
+            w_model = 0.55
+        elif improv >= 0.00:
+            w_model = 0.50
+        else:
+            w_model = 0.40  # peor que EMA → favorece EMA
+
+        # modulación por estabilidad (más splits y más datos ⇒ más peso al modelo)
+        stab = min(1.0, max(0.0, 0.6 + 0.4 * min(1.0, n_splits/4.0)))
+        data = min(1.0, max(0.0, min(n_samples, 60)/60.0))
+        w_model = np.clip(w_model * (0.8 + 0.2*stab) * (0.6 + 0.4*data), 0.30, 0.80)
+        w_ema = round(1.0 - float(w_model), 2)
+        w_model = round(float(w_model), 2)
+
+        policy[tgt] = {
+            "best_model": best_name,
+            "mae_model": round(best_mae, 3),
+            "mae_ema": (round(mae_ema, 3) if mae_ema is not None else None),
+            "improv_vs_ema": (round(float(improv), 3) if improv is not None else None),
+            "weights": {"model": w_model, "ema14": w_ema}
+        }
+    return policy
 
 def impute_last_valid(series: pd.Series, maxgap: int = 3) -> pd.Series:
     """
@@ -768,6 +844,36 @@ def build_and_evaluate(df: pd.DataFrame, export_dir: str = "./outputs") -> Dict[
         with open(os.path.join(export_dir, f"{target}_drivers_del_dia.txt"), "w", encoding="utf-8") as f:
             f.write(expl.get("texto","(sin texto)"))
 
+     # --- 7.5) Consolida métricas y construye política de mezcla por target ---
+    # Reunimos todos los CSV de métricas que acabamos de guardar:
+    all_metrics = []
+    for tgt in [t for t in TARGETS if t in df.columns]:
+        path = os.path.join(export_dir, f"{tgt}_cv_metrics.csv")
+        if os.path.exists(path):
+            m = pd.read_csv(path)
+            m["target"] = tgt  # por si acaso
+            all_metrics.append(m)
+    metrics_all_df = pd.concat(all_metrics, ignore_index=True) if all_metrics else pd.DataFrame()
+
+    # n_splits aproximado (toma el máximo reportado)
+    _ns = int(metrics_all_df["n_splits"].max()) if not metrics_all_df.empty and "n_splits" in metrics_all_df.columns else 0
+    _n = int(metrics_all_df["n_samples"].max()) if not metrics_all_df.empty and "n_samples" in metrics_all_df.columns else len(df)
+
+    blend_policy = _blend_policy_from_metrics(metrics_all_df, n_samples=_n, n_splits=_ns)
+
+    # Imprime un resumen claro para alternar pesos en runtime
+    print("\n================= MODELOS & POLÍTICA DE PESOS =================")
+    for tgt, pol in blend_policy.items():
+        print(f"[{tgt}] best={pol['best_model']}  MAE_model={pol['mae_model']}  "
+              f"MAE_EMA={pol['mae_ema']}  Δ%vsEMA={pol['improv_vs_ema']}")
+        print(f"      Pesos sugeridos → model={pol['weights']['model']}, ema14={pol['weights']['ema14']}")
+    print("===============================================================\n")
+
+    # Persistir JSON para que otros procesos lo lean
+    import json
+    with open(os.path.join(export_dir, "politica_pesos.json"), "w", encoding="utf-8") as f:
+        json.dump(blend_policy, f, ensure_ascii=False, indent=2)
+
     # 8) Exporta resumen general
     if summary_rows:
         summary_df = pd.DataFrame(summary_rows).sort_values(["target","mae"])
@@ -797,7 +903,7 @@ def build_and_evaluate(df: pd.DataFrame, export_dir: str = "./outputs") -> Dict[
         f.write("\\n".join(report_lines))
 
 
-    return {"df": df, "summary": summary_df, "best_models": best_models}
+        return {"df": df, "summary": summary_df, "best_models": best_models, "blend_policy": blend_policy}
 
 def load_csv_or_template(path: str) -> pd.DataFrame:
     if os.path.exists(path):
