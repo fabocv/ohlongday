@@ -77,32 +77,32 @@
 ### 3.1 Sueño y descanso
 - **Duración de sueño (h):**  
   Si `hora_dormir` > `hora_despertar`, sumar 24h al despertar.  
-  $$ \mathrm{sueno\_duracion\_h} = \frac{\mathrm{despertar} - \mathrm{dormir}}{60}$$ 
+  $$\mathrm{sueno\_duracion\_h} = \frac{\mathrm{despertar} - \mathrm{dormir}}{60}$$
 - **Déficit de sueño (h):** respecto a objetivo personal (ej. 7.5 h).  
-  $$ \mathrm{sueno\_deficit_h} = 7.5 - \mathrm{sueno\_duracion\_h}$$ 
+  $$\mathrm{sueno\_deficit_h} = 7.5 - \mathrm{sueno\_duracion\_h}$$
 - **Indicador de fragmentación:**  
-  $$ \mathrm{sueno\_fragmentacion} = \mathrm{scale}( \mathrm{despertares\_nocturnos} )$$ 
+  $$\mathrm{sueno\_fragmentacion} = \mathrm{scale}( \mathrm{despertares\_nocturnos} )$$
 - **Índice de sueño compuesto (0–10):** pondera calidad, duración y fragmentación:  
-  $$ I_{sueno} = 0.5\cdot \mathrm{norm}(\mathrm{sueno\_calidad}) + 0.35\cdot \mathrm{norm}(\mathrm{sueno\_duracion\_h}) - 0.15\cdot \mathrm{norm}(\mathrm{sueno\_fragmentacion})$$ 
+  $$I_{sueno} = 0.5\cdot \mathrm{norm}(\mathrm{sueno\_calidad}) + 0.35\cdot \mathrm{norm}(\mathrm{sueno\_duracion\_h}) - 0.15\cdot \mathrm{norm}(\mathrm{sueno\_fragmentacion})$$
 
 ### 3.2 Movimiento y energía
 - **Carga de actividad (AU):**  
-  $$ \mathrm{actividad\_carga} = \mathrm{mov\_intensidad}\times \sqrt{\mathrm{tiempo\_ejercicio (min)}}$$ 
+  $$\mathrm{actividad\_carga} = \mathrm{mov\_intensidad}\times \sqrt{\mathrm{tiempo\_ejercicio (min)}}$$
 - **Recuperación rápida (proxy):** si `siesta_min`>0 y `actividad_carga` alta → +recuperación.
 - **Índice metabólico/energía (0–10):**  
-  $$ I_{energia} = 0.45\cdot \mathrm{norm}(\mathrm{actividad\_carga}) + 0.35\cdot \mathrm{norm}(I_{sueno}) + 0.20\cdot \mathrm{norm}(-|\mathrm{glicemia}-\mu_{g}|),$$ 
-  donde $$ \(\mu_{g}\)$$  es el **rango objetivo personal** (p.ej. 80–110 mg/dL en ayunas). Se penaliza desviación absoluta.
+  $$I_{energia} = 0.45\cdot \mathrm{norm}(\mathrm{actividad\_carga}) + 0.35\cdot \mathrm{norm}(I_{sueno}) + 0.20\cdot \mathrm{norm}(-|\mathrm{glicemia}-\mu_{g}|),$$
+  donde $$\(\mu_{g}\)$$ es el **rango objetivo personal** (p.ej. 80–110 mg/dL en ayunas). Se penaliza desviación absoluta.
 
 ### 3.3 Estimulantes / depresores
 - **Cafeína estimada (mg):**  
-  $$ \mathrm{cafeina\_mg} \approx 75 \times \mathrm{cafe\_cucharaditas}$$ 
+  $$\mathrm{cafeina\_mg} \approx 75 \times \mathrm{cafe\_cucharaditas}$$
 - **Alcohol reciente (flag):** `alcohol_ultima_hora` o `alcohol_ud`≥1.
 - **Carga psicoactiva (proxy 0–10):**
-  $$ \mathrm{psicoactiva} = \mathrm{scale}\big( \mathrm{cafeina\_mg} + 120\cdot\mathrm{alcohol\_ud} \big)$$ 
+  $$\mathrm{psicoactiva} = \mathrm{scale}\big( \mathrm{cafeina\_mg} + 120\cdot\mathrm{alcohol\_ud} \big)$$
 
 ### 3.4 Sociales, pantalla y espiritualidad
 - **Balance social (−1..+1):**  
-  $$ \mathrm{social\_balance} = \mathrm{scale}(\mathrm{interacciones\_calidad}) + 0.1\cdot \mathrm{scale}(\mathrm{interacciones\_significativas})$$ 
+  $$\mathrm{social\_balance} = \mathrm{scale}(\mathrm{interacciones\_calidad}) + 0.1\cdot \mathrm{scale}(\mathrm{interacciones\_significativas})$$
 - **Carga nocturna de pantalla (0–10):** `scale(tiempo_pantalla_noche_min)`.
 - **Juego digital / presencial:** dos canales (`juego_en_dispositivo_min`, `juego_en_persona_min`) para contrastar regulaciones opuestas.
 - **Práctica espiritual (0–10):** frecuencia/etiquetas → conteo o minutos → `norm`.
@@ -113,11 +113,11 @@
 > Buscamos comparabilidad **intra-persona** (baseline personal).
 
 ### 4.1 Z-score clásico (si n≥20 válidos)
-$$ z(x_t) = \frac{x_t - \mu_x}{\sigma\_x}$$ 
+$$z(x_t) = \frac{x_t - \mu_x}{\sigma\_x}$$
 - \(\mu_x\), \(\sigma\_x\) = media y desvío **personales** (últimos 60–90 días si existen).
 
 ### 4.2 Z robusto (si n<20 o outliers)
-$$ z_r(x_t) = \frac{x_t - \mathrm{mediana}(x)}{1.4826\cdot \mathrm{MAD}(x)}$$ 
+$$z_r(x_t) = \frac{x_t - \mathrm{mediana}(x)}{1.4826\cdot \mathrm{MAD}(x)}$$
 - **Winsorizar** p05–p95 antes si hay extremos.
 
 ### 4.3 `norm(·)` y `scale(·)`
@@ -127,10 +127,10 @@ $$ z_r(x_t) = \frac{x_t - \mathrm{mediana}(x)}{1.4826\cdot \mathrm{MAD}(x)}$$
 ---
 
 ## 5) Suavizado EMA (α≈0.30, lookback≈14)
-$$ S_t = \alpha\cdot x_t + (1-\alpha)\cdot S_{t-1}$$ 
+$$S_t = \alpha\cdot x_t + (1-\alpha)\cdot S_{t-1}$$
 - **Warm-up:** mostrar EMA solo si n ≥ 7–10.  
 - **Confianza EMA:**  
-  $$ \mathrm{conf}_{EMA}(t) = \min\left(1,\ \frac{n}{14}\right)\cdot \frac{1}{1 + \mathrm{var}(x_{t-13..t})}$$ 
+  $$\mathrm{conf}_{EMA}(t) = \min\left(1,\ \frac{n}{14}\right)\cdot \frac{1}{1 + \mathrm{var}(x_{t-13..t})}$$
 - **Bandas “Caution/Alert”:** cuantiles personales p20/p80 (o p15/p85).  
 - **Autotune opcional:** grid‐search \(\alpha\in[0.2,0.35]\), \(L\in[10,21]\) minimizando error 1-paso (MAE).
 
@@ -139,21 +139,21 @@ $$ S_t = \alpha\cdot x_t + (1-\alpha)\cdot S_{t-1}$$
 ## 6) Índices compuestos del BDP (día t)
 > Vector **H-V-C-P-S⁻** (base teórica del BDP).
 
-$$ \begin{aligned}
+$$\begin{aligned}
 H_t &= z(\mathrm{animo}_t) \\
 V_t &= z(\mathrm{activacion}_t) + z(I_{sueno,t}) \\
 C_t &= z(\mathrm{conexion}_t) \\
 P_t &= z(\mathrm{proposito}_t) + z(\mathrm{claridad}_t) \\
 S_t^- &= -\,z(\mathrm{estres}_t)
-\end{aligned}$$ 
+\end{aligned}$$
 
 - **Bienestar compuesto (WB):**  
-  $$ WB_t = w_H H_t + w_V V_t + w_C C_t + w_P P_t + w_{S^-} S_t^-$$ 
+  $$WB_t = w_H H_t + w_V V_t + w_C C_t + w_P P_t + w_{S^-} S_t^-$$
   **Pesos sugeridos (hipótesis):** \(w_H=0.25,\ w_V=0.20,\ w_C=0.15,\ w_P=0.20,\ w_{S^-}=0.20\).  
   > Ajustables por validación personal o aprendizaje (sección 8).
 
 - **Índice de Carga (Stress Load):**  
-  $$ SL_t = z(\mathrm{estres}_t) + 0.3\cdot \mathrm{scale}(\mathrm{eventos\_estresores}) + 0.2\cdot \mathrm{scale}(\mathrm{tiempo\_pantalla\_noche\_min})$$ 
+  $$SL_t = z(\mathrm{estres}_t) + 0.3\cdot \mathrm{scale}(\mathrm{eventos\_estresores}) + 0.2\cdot \mathrm{scale}(\mathrm{tiempo\_pantalla\_noche\_min})$$
 
 - **Índice Energético (Energy):** usar \(I_{energia}\) (3.2) y su z.
 
@@ -162,20 +162,20 @@ S_t^- &= -\,z(\mathrm{estres}_t)
 ## 7) Índices clínico-proxy (no diagnósticos)
 
 ### 7.1 Ansiedad-proxy (AX)
-$$ AX_t = 0.40\,z(\mathrm{estres}_t) + 0.25\,z(\mathrm{ansiedad}_t) + 0.15\,z_r(\mathrm{irritabilidad}_t) + 0.10\,\mathrm{scale}(\mathrm{cafeina\_mg}_t) + 0.10\,\mathrm{scale}(\mathrm{despertares\_nocturnos}_t)$$ 
+$$AX_t = 0.40\,z(\mathrm{estres}_t) + 0.25\,z(\mathrm{ansiedad}_t) + 0.15\,z_r(\mathrm{irritabilidad}_t) + 0.10\,\mathrm{scale}(\mathrm{cafeina\_mg}_t) + 0.10\,\mathrm{scale}(\mathrm{despertares\_nocturnos}_t)$$
 - **Lectura:** ↑AX sugiere activación/hipervigilancia; revisar sueño, cafeína y regulación.
 
 ### 7.2 Hipomanía-proxy (HYPO)
-$$ \begin{aligned}
+$$\begin{aligned}
 HYPO_t =\ & 0.35\,z(\mathrm{activacion}_t) + 0.20\,z(\mathrm{animo}_t) \\
 & - 0.15\,\mathrm{norm}(\mathrm{sueno\_duracion\_h}_t) + 0.10\,\mathrm{scale}(\mathrm{cafeina\_mg}_t) \\
 & + 0.10\,\mathrm{scale}(\mathrm{interacciones\_significativas}_t) + 0.10\,\mathrm{scale}(\mathrm{impulso\_nocturno}_t)
-\end{aligned}$$ 
+\end{aligned}$$
 - `impulso_nocturno` ~ combinación de `tiempo_pantalla_noche_min`, juego nocturno, compras/decisiones impulsivas (si etiqueta existe).
 - **Lectura:** ↑HYPO sugiere patrón de **alta activación con menor descanso**.
 
 ### 7.3 Depresión-proxy (DEP)
-$$ DEP_t = -0.35\,z(\mathrm{animo}_t) - 0.20\,z(\mathrm{activacion}_t) - 0.15\,z(\mathrm{proposito}_t) - 0.10\,z(\mathrm{claridad}_t) + 0.10\,\mathrm{scale}(\mathrm{sueno\_fragmentacion}_t) - 0.10\,\mathrm{norm}(\mathrm{autocuidado}_t)$$ 
+$$DEP_t = -0.35\,z(\mathrm{animo}_t) - 0.20\,z(\mathrm{activacion}_t) - 0.15\,z(\mathrm{proposito}_t) - 0.10\,z(\mathrm{claridad}_t) + 0.10\,\mathrm{scale}(\mathrm{sueno\_fragmentacion}_t) - 0.10\,\mathrm{norm}(\mathrm{autocuidado}_t)$$
 - **Lectura:** ↑DEP sugiere **bajo tono emocional/energía** + trastornos de sueño.
 
 > **Recordatorio:** Estos índices son **orientativos** y deben leerse con **contexto personal y clínico**.
