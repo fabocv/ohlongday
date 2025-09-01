@@ -1,300 +1,358 @@
 # Generate the HTML again, this time with inline narrative functions to avoid import issues
 import math
-import numpy as np
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from datetime import datetime, date, timedelta
 import importlib.util
 from bdp_calcs.drivers import drivers_del_dia
+from bdp_calcs.variables import report_variables
+import json
 
-# === Helpers: Hábitos y Patrones ==================================================
-def _parse_hhmm(s: pd.Series) -> pd.Series:
-    if s is None:
-        return pd.Series([None]*0)
-    s = s.astype(str).str.strip().str.replace(".", ":", regex=False).str.replace(";", ":", regex=False)
-    def fix(x):
-        if not x or str(x).lower() in {"nan","nat"}: return None
-        parts = str(x).split(":")
-        if len(parts)==1 and parts[0].isdigit(): return f"{int(parts[0])%24:02d}:00"
-        if len(parts)>=2 and parts[0].isdigit() and parts[1].isdigit():
-            return f"{int(parts[0])%24:02d}:{int(parts[1])%60:02d}"
-        return None
-    return s.map(fix)
+import re
 
-def _daypart(hhmm: str) -> str:
-    if not isinstance(hhmm, str) or ":" not in hhmm: return "desconocido"
-    hh = int(hhmm.split(":")[0])
-    if 5<=hh<12: return "mañana"
-    if 12<=hh<18: return "tarde"
-    if 18<=hh<24: return "noche"
-    return "madrugada"
 
-def habit_kpis(df: pd.DataFrame, goals=None, win_short=7, win_prev=7, var_win=14):
-    if goals is None:
-        goals = {
-            "agua_litros": ("min", 1.6),
-            "tiempo_ejercicio_min": ("min", 30),
-            "meditacion_min": ("min", 10),
-            "exposicion_sol_min": ("min", 15),
-            "tiempo_pantalla_noche_min": ("max", 60),
-            "alcohol_ud": ("max", 1),
-            "cafe_cucharaditas": ("max", 3),
-            "horas_sueno": ("min", 7),
-            "sueno_calidad": ("min", 6),
-        }
+def _norm_date_ddmmyyyy(s: pd.Series) -> pd.Series:
+    # reemplaza / por -, recorta espacios
+    s = s.astype(str).str.strip().str.replace("/", "-", regex=False)
+    # fuerza 2 dígitos día/mes si vienen como 1-1-2025
+    pat = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+    def _pad(x):
+        m = pat.match(x)
+        if not m: return x
+        d, mth, y = m.groups()
+        return f"{int(d):02d}-{int(mth):02d}-{y}"
+    return s.map(_pad)
 
-    out_rows = []
-    if "fecha" in df.columns:
-        dfd = df.copy()
-        dfd["_fecha"] = pd.to_datetime(dfd["fecha"], errors="coerce", dayfirst=True)
+def _norm_time_hhmm(s: pd.Series) -> pd.Series:
+    # admite "7:5" -> "07:05", y valores vacíos -> "00:00"
+    s = s.astype(str).str.strip().replace({"nan":"", "NaT":""})
+    def _pad(t):
+        if not t: return "00:00"
+        m = re.match(r"^(\d{1,2}):(\d{1,2})$", t)
+        if not m: return "00:00"
+        h, mi = m.groups()
+        return f"{int(h):02d}:{int(mi):02d}"
+    return s.map(_pad)
+
+def _timestamp_from_fecha_hora(df: pd.DataFrame,
+                               date_col: str = "fecha",
+                               time_col: str = "hora") -> pd.Series:
+    """
+    Devuelve una serie datetime con formato explícito:
+    - si hay fecha y hora -> '%d-%m-%Y %H:%M'
+    - si sólo hay fecha   -> '%d-%m-%Y'
+    """
+    if date_col not in df.columns:
+        # sin columna fecha: devolvemos índice como NaT y no rompemos
+        return pd.to_datetime(pd.Series([pd.NaT]*len(df), index=df.index))
+    d = _norm_date_ddmmyyyy(df[date_col])
+    if time_col in df.columns:
+        t = _norm_time_hhmm(df[time_col])
+        dt = pd.to_datetime(d + " " + t, format="%d-%m-%Y %H:%M", errors="coerce")
     else:
-        dfd = df.copy()
-        dfd["_fecha"] = pd.to_datetime(dfd.index)
+        dt = pd.to_datetime(d, format="%d-%m-%Y", errors="coerce")
+    return dt
 
-    for col, (mode, goal) in goals.items():
-        if col not in dfd.columns: 
-            continue
-        s = pd.to_numeric(dfd[col], errors="coerce")
-        daily = s.groupby(dfd["_fecha"].dt.date).sum(min_count=1)
-        if len(daily.dropna()) == 0:
-            continue
 
-        last = daily.dropna().iloc[-1] if len(daily.dropna()) else np.nan
-        recent = daily.tail(win_short)
-        prev = daily.tail(win_short+win_prev).head(win_prev)
-        mean_recent = recent.mean()
-        mean_prev = prev.mean() if len(prev) else np.nan
-        delta_pct = np.nan
-        if pd.notna(mean_recent) and pd.notna(mean_prev) and mean_prev != 0:
-            delta_pct = (mean_recent - mean_prev) / abs(mean_prev)
-
-        def ok(v):
-            if pd.isna(v): return False
-            return v >= goal if mode=="min" else v <= goal
-        adherencia = np.mean([ok(v) for v in recent]) if len(recent) else np.nan
-
-        streak = 0
-        for v in reversed(daily.values.tolist()):
-            if ok(v): streak += 1
-            else: break
-
-        var = daily.tail(var_win).std()
-
-        estado = "irregular"
-        if pd.notna(delta_pct) and pd.notna(adherencia):
-            if delta_pct >= 0.10 and adherencia >= 0.60: estado = "construyendo"
-            elif abs(delta_pct) < 0.10 and adherencia >= 0.60: estado = "mantenimiento"
-            elif delta_pct <= -0.10 or adherencia < 0.30: estado = "en retroceso"
-
-        out_rows.append({
-            "habito": col,
-            "ultimo": last,
-            "prom_7d": mean_recent,
-            "prom_7d_prev": mean_prev,
-            "delta_pct": delta_pct,
-            "adherencia_7d": adherencia,
-            "streak_dias": streak,
-            "variabilidad_14d": var,
-            "estado": estado,
-            "meta": f"{mode} {goal}",
-        })
-
-    summary = pd.DataFrame(out_rows).sort_values(["estado","habito"])
-
-    dayparts = pd.DataFrame()
-    if "hora" in df.columns and "fecha" in df.columns:
-        horas = _parse_hhmm(df["hora"])
-        parts = horas.map(_daypart)
-        dfx = df.copy()
-        dfx["_fecha"] = pd.to_datetime(dfx["fecha"], errors="coerce", dayfirst=True).dt.date
-        dfx["_part"] = parts
-        if len(dfx["_fecha"].dropna())>0:
-            last_day = dfx["_fecha"].dropna().iloc[-1]
-            dd = dfx[dfx["_fecha"]==last_day]
-        else:
-            dd = dfx
-        collect = []
-        for col in (goals.keys()):
-            if col not in dd.columns: continue
-            vals = pd.to_numeric(dd[col], errors="coerce")
-            g = vals.groupby(dd["_part"]).sum(min_count=1)
-            for k,v in g.items():
-                collect.append({"habito": col, "franja": k if pd.notna(k) else "desconocido", "valor": v})
-        dayparts = pd.DataFrame(collect)
-
-    return {"summary": summary, "dayparts": dayparts}
-
-def _z(s: pd.Series, win: int = 30) -> pd.Series:
+# === Ejes fisiológicos (proxies) ==================================================
+def _znorm_roll(s: pd.Series, win: int = 30) -> pd.Series:
     x = pd.to_numeric(s, errors="coerce")
     r = x.rolling(win, min_periods=max(10, win//3))
-    return (x - r.mean()) / r.std()
+    z = (x - r.mean()) / r.std()
+    return z
 
-def _clip_pos(s: pd.Series) -> pd.Series:
-    return s.clip(lower=0).fillna(0)
+def _sigmoid01(x: pd.Series) -> pd.Series:
+    x = pd.to_numeric(x, errors="coerce")
+    return 1 / (1 + np.exp(-x.clip(-6, 6)))
 
-def pattern_scores(df: pd.DataFrame, win: int = 30) -> pd.DataFrame:
-    out = pd.DataFrame(index=df.index)
+def _clamp_idx(n: int, i: int) -> int:
+    if n <= 0: return -1
+    return max(0, min(int(i), n-1))
+
+def _col_any(df: pd.DataFrame, names: list[str]) -> pd.Series:
+    for n in names:
+        if n in df.columns:
+            return pd.to_numeric(df[n], errors="coerce")
+    return pd.Series(index=df.index, dtype=float)
+
+def _series_or_zero(df: pd.DataFrame, col: str) -> pd.Series:
+    if col in df.columns:
+        return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    return pd.Series(0.0, index=df.index, dtype=float)
+
+def _sleep_hours_series(df: pd.DataFrame) -> pd.Series:
+    # 1) explícita
+    s = _col_any(df, ["horas_sueno","sueno_horas"])
+    if s.notna().any():
+        return s
+    # 2) estimar con hora_dormir / hora_despertar (o hora_DSPT)
+    hd = df.get("hora_dormir")
+    hr = df.get("hora_despertar", df.get("hora_DSPT"))
+    if hd is None or hr is None:
+        return pd.Series(index=df.index, dtype=float)
+    def _to_minutes(x):
+        try:
+            t = pd.to_datetime(_norm_time_hhmm(x.astype(str)), format="%H:%M", errors="coerce")
+            return t.dt.hour * 60 + t.dt.minute
+        except Exception:
+            return pd.Series([np.nan]*len(df), index=df.index, dtype=float)
+    m_sleep  = _to_minutes(hd)
+    m_wake   = _to_minutes(hr)
+    dur = (m_wake - m_sleep) % (24*60)  # envuelve medianoche
+    return (dur / 60.0).astype(float)
+
+def _series_or_zero(df: pd.DataFrame, key: str) -> pd.Series:
+    if key in df.columns:
+        return pd.to_numeric(df[key], errors="coerce")
+    return pd.Series(index=df.index, dtype=float)
+
+def _screen_load_z(df, win=30):
     zmap = {}
-    for c in ["animo","claridad","estres","activacion","horas_sueno","sueno_calidad",
-              "tiempo_ejercicio_min","exposicion_sol_min","tiempo_pantalla_noche_min",
-              "agua_litros","cafe_cucharaditas","alcohol_ud","ansiedad","irritabilidad"]:
-        if c in df.columns:
-            zmap[c] = _z(df[c], win)
-    z = lambda k: zmap.get(k, pd.Series(index=df.index, dtype=float))
+    if "tiempo_pantallas" in df.columns:
+        zmap["tiempo_pantallas"] = _znorm_roll(df["tiempo_pantallas"], win)
+    if "tiempo_pantalla_noche_min" in df.columns:
+        zmap["tiempo_pantalla_noche_min"] = _znorm_roll(df["tiempo_pantalla_noche_min"], win)
+    if not zmap:
+        return pd.Series(index=df.index, dtype=float)
+    return pd.concat(zmap.values(), axis=1).max(axis=1, skipna=True)
 
-    stim = df.get("otras_sustancias", pd.Series([""]*len(df))).astype(str).str.contains("psicoestimulantes", case=False, na=False).astype(int)
+def _morning_sun_z(df, win=30):
+    if "exposicion_sol_manana_min" in df.columns:
+        return _znorm_roll(df["exposicion_sol_manana_min"], win)
+    return _znorm_roll(_series_or_zero(df, "exposicion_sol_min"), win)
 
-    a = (0.30*_clip_pos(z("estres")) +
-         0.35*_clip_pos(z("ansiedad")) +
-         0.25*_clip_pos(-z("claridad")) +
-         0.25*_clip_pos(-z("horas_sueno")) +
-         0.15*_clip_pos(z("tiempo_pantalla_noche_min")) +
-         0.10*_clip_pos(z("cafe_cucharaditas")))
-    ans_signal = (a / 1.40).clip(upper=1.0)
+def _irregular_bedtime(df, win=14):
+    s = df.get("hora_dormir")
+    if s is None:
+        return pd.Series(index=df.index, dtype=float)
+    ss = s.astype(str).str.strip().str.replace(".", ":", regex=False).str.replace(";", ":", regex=False)
+    def to_min(v):
+        try:
+            if not v or v.lower() in {"nan","nat"}: return np.nan
+            hh, mm = v.split(":")[:2]
+            return (int(hh)%24)*60 + (int(mm)%60)
+        except Exception:
+            return np.nan
+    mins = ss.map(to_min)
+    r = mins.rolling(win, min_periods=max(7, win//2))
+    return r.std()
+def hormones_proxies(df: pd.DataFrame, win: int = 30, row_idx: int | None = None):
+    # --- Señales base (con aliases) ---
+    z = {}
+    z["animo"]       = _znorm_roll(_col_any(df, ["animo"]), win)
+    z["claridad"]    = _znorm_roll(_col_any(df, ["claridad"]), win)
+    z["estres"]      = _znorm_roll(_col_any(df, ["estres"]), win)
+    z["activacion"]  = _znorm_roll(_col_any(df, ["activacion"]), win)
 
-    h = (0.35*_clip_pos(z("activacion")) +
-         0.20*_clip_pos(z("animo")) +
-         0.25*_clip_pos(-z("horas_sueno")) +
-         0.15*_clip_pos(z("tiempo_ejercicio_min")) +
-         0.10*stim)
-    hypo_signal = (h / 1.05).clip(upper=1.0)
+    horas_sueno = _sleep_hours_series(df)
+    z["horas_sueno"]    = _znorm_roll(horas_sueno, win)
+    z["sueno_calidad"]  = _znorm_roll(_col_any(df, ["sueno_calidad"]), win)
 
-    d = (0.40*_clip_pos(-z("animo")) +
-         0.25*_clip_pos(-z("claridad")) +
-         0.15*_clip_pos(-z("tiempo_ejercicio_min")) +
-         0.10*_clip_pos(-z("exposicion_sol_min")) +
-         0.10*_clip_pos(z("tiempo_pantalla_noche_min")) +
-         0.10*_clip_pos(-z("sueno_calidad")))
-    dep_signal = (d / 1.10).clip(upper=1.0)
+    z["tiempo_ejercicio_min"] = _znorm_roll(_col_any(df, ["tiempo_ejercicio_min","tiempo_ejercicio"]), win)
+    z["exposicion_sol_min"]   = _znorm_roll(_col_any(df, ["exposicion_sol_min","exposicion_sol_manana_min"]), win)
+    z["agua_litros"]          = _znorm_roll(_col_any(df, ["agua_litros"]), win)
+    z["cafe_cucharaditas"]    = _znorm_roll(_col_any(df, ["cafe_cucharaditas"]), win)
+    z["alcohol_ud"]           = _znorm_roll(_col_any(df, ["alcohol_ud"]), win)
+    z["ansiedad"]             = _znorm_roll(_col_any(df, ["ansiedad"]), win)
+    z["irritabilidad"]        = _znorm_roll(_col_any(df, ["irritabilidad"]), win)
+    z["glicemia"]             = _znorm_roll(_col_any(df, ["glicemia"]), win)
+    z["mov_intensidad"]       = _znorm_roll(_col_any(df, ["mov_intensidad","movimiento"]), win)
+    z["despertares_nocturnos"]= _znorm_roll(_col_any(df, ["despertares_nocturnos","DSPTes_nocturnos"]), win)
 
-    b = (0.35*_clip_pos(z("estres")) +
-         0.25*_clip_pos(-z("sueno_calidad")) +
-         0.20*_clip_pos(-z("horas_sueno")) +
-         0.10*_clip_pos(z("tiempo_pantalla_noche_min")) +
-         0.10*_clip_pos(-z("agua_litros")))
-    burn_signal = (b / 1.00).clip(upper=1.0)
+    z["screen"]       = _screen_load_z(df, win)
+    z["sun_morning"]  = _morning_sun_z(df, win)
+    bed_irreg_raw     = _irregular_bedtime(df)
+    z["bed_irreg"]    = _znorm_roll(bed_irreg_raw, win)
 
-    out["signal_ansiedad"] = ans_signal
-    out["signal_hipomania_like"] = hypo_signal
-    out["signal_depresivo"] = dep_signal
-    out["signal_burnout"] = burn_signal
-    return out
+    # --- Proxies (signos coherentes) ---
+    cort_z = (0.30*z["estres"] +
+              0.25*z["activacion"] +
+              0.20*(-z["horas_sueno"]) +
+              0.15*z["cafe_cucharaditas"] +
+              0.10*(-z["sun_morning"]) +
+              0.10*z["despertares_nocturnos"])
 
-def pattern_summary_text(df: pd.DataFrame, signals: pd.DataFrame, row_idx: int = -1, thr: float = 0.7) -> str:
-    row = signals.iloc[row_idx]
-    msgs = []
-    def mk(label, s):
-        if pd.isna(s): return
-        if s >= thr:
-            msgs.append(f"{label}: señal alta ({s:.2f}).")
-        elif s >= 0.5:
-            msgs.append(f"{label}: señal moderada ({s:.2f}).")
-    mk("Ansiedad", row.get("signal_ansiedad", np.nan))
-    mk("Hipomanía-like", row.get("signal_hipomania_like", np.nan))
-    mk("Sesgo depresivo", row.get("signal_depresivo", np.nan))
-    mk("Sobrecarga/burnout", row.get("signal_burnout", np.nan))
-    base = "Patrones sugeridos (no diagnósticos): "
-    tail = " — Señales vagas o incompletas." if not msgs else ""
-    return base + " ".join(msgs) + tail + " Usa esto como orientación para conversación terapéutica."
+    mel_z = (0.35*z["sueno_calidad"] +
+             0.25*(-z["screen"]) +
+             0.15*z["exposicion_sol_min"] +
+             0.15*(-z["alcohol_ud"]) +
+             0.10*(-z["bed_irreg"]))
 
-def habits_section_html(df: pd.DataFrame, goals=None) -> str:
-    res = habit_kpis(df, goals=goals)
-    summ = res["summary"]
-    dp = res["dayparts"]
-    if summ is None or summ.empty:
-        return "<div class='section'><h2>Hábitos y cambios</h2><div class='small'>Sin datos suficientes.</div></div>"
-    rows = []
-    state_cls = {"construyendo":"good","mantenimiento":"ok","irregular":"warn","en retroceso":"bad"}
-    for r in summ.itertuples(index=False):
-        estado = getattr(r, "estado")
-        cls = state_cls.get(estado, "ok")
-        hab = getattr(r, "habito")
-        ultimo = getattr(r, "ultimo")
-        p7 = getattr(r, "prom_7d")
-        p7p = getattr(r, "prom_7d_prev")
-        d = getattr(r, "delta_pct")
-        adh = getattr(r, "adherencia_7d")
-        streak = getattr(r, "streak_dias")
-        var = getattr(r, "variabilidad_14d")
-        meta = getattr(r, "meta")
-        def fmt(x, nd=2):
-            return "" if pd.isna(x) else f"{x:.{nd}f}"
-        def pct(x):
-            return "" if pd.isna(x) else f"{x*100:+.0f}%"
-        def pc(x):
-            return "" if pd.isna(x) else f"{x*100:.0f}%"
-        rows.append(f"""
-        <tr>
-          <td><strong>{hab}</strong><div class="small">meta: {meta}</div></td>
-          <td>{fmt(ultimo)}</td>
-          <td>{fmt(p7)}</td>
-          <td>{fmt(p7p)}</td>
-          <td>{pct(d)}</td>
-          <td>{pc(adh)}</td>
-          <td>{streak}</td>
-          <td>{fmt(var)}</td>
-          <td><span class="badge {cls}">{estado}</span></td>
-        </tr>""")
-    table = f"""
-    <table class="table">
-      <thead>
-        <tr><th>Hábito</th><th>Último</th><th>Prom. 7d</th><th>Prom. 7d prev</th><th>Δ%</th><th>Adherencia 7d</th><th>Racha</th><th>Variab. 14d</th><th>Estado</th></tr>
-      </thead>
-      <tbody>{''.join(rows)}</tbody>
-    </table>"""
+    ins_z = (0.40*(-z["glicemia"]) +
+             0.25*z["tiempo_ejercicio_min"] +
+             0.15*z["horas_sueno"] +
+             0.10*(-z["alcohol_ud"]) +
+             0.10*_znorm_roll(_series_or_zero(df, "alimentacion"), win))
 
-    chips = []
-    if dp is not None and not dp.empty:
-        for (hab), g in dp.groupby("habito"):
-            tags = " ".join(f"<span class='tag'>{row['franja']}: {row['valor']:.2f}</span>"
-                            for _, row in g.dropna(subset=["valor"]).iterrows() if row["valor"]>0)
-            if tags:
-                chips.append(f"<div><div class='small'><strong>{hab}</strong> — último día</div>{tags}</div>")
-    dplay = "<div class='small'>—</div>" if not chips else "".join(chips)
+    anx_mix = pd.concat([z["estres"], z["ansiedad"]], axis=1).max(axis=1, skipna=True)
+    ap_z = (0.40*z["horas_sueno"] +
+            0.20*z["sueno_calidad"] +
+            0.20*(-anx_mix) +
+            0.10*z["tiempo_ejercicio_min"] +
+            0.10*(-z["screen"]))
 
-    return f"""
-    <div class="section">
-      <h2>Hábitos y cambios</h2>
-      <div class="card">{table}</div>
-      <div class="section">
-        <div class="card">
-          <div class="small">Distribución por franja (mañana/tarde/noche, último día):</div>
-          {dplay}
-        </div>
-      </div>
-    </div>
-    """
+    stim_flag = df.get("otras_sustancias", pd.Series([""]*len(df))).astype(str)\
+        .str.contains("psicoestimulantes|nicotina", case=False, na=False).astype(int)
+    stim_z = _znorm_roll(stim_flag, win)
+    move_proxy = z["mov_intensidad"]
 
-def patterns_section_html(df: pd.DataFrame) -> str:
-    sig = pattern_scores(df)
-    txt = pattern_summary_text(df, sig, row_idx=-1, thr=0.7)
-    row = sig.iloc[-1] if len(sig) else pd.Series(dtype=float)
+    cat_z = (0.35*z["estres"] +
+             0.20*z["ansiedad"] +
+             0.20*(0.6*z["cafe_cucharaditas"] + 0.4*stim_z) +
+             0.15*(move_proxy) +
+             0.10*(-z["sueno_calidad"]))
+
+    scores = pd.DataFrame({
+        "cortisol_proxy":     _sigmoid01(cort_z),
+        "melatonina_proxy":   _sigmoid01(mel_z),
+        "insulin_sens_proxy": _sigmoid01(ins_z),
+        "apetito_proxy":      _sigmoid01(ap_z),
+        "catecolaminas_proxy":_sigmoid01(cat_z),
+    }, index=df.index)
+
+    # --- Explicaciones top en el día pedido ---
+    explains = {}
+    if len(scores):
+        ridx = _clamp_idx(len(scores), row_idx if row_idx is not None else len(scores)-1)
+
+        def contribs(terms):
+            vals = []
+            for label, series, sign in terms:
+                s = pd.to_numeric(series, errors="coerce")
+                v = (s.iloc[ridx] if len(s) and ridx < len(s) else np.nan)
+                vals.append((label, (v * sign) if pd.notna(v) else np.nan))
+            up = sorted([x for x in vals if pd.notna(x[1]) and x[1] > 0], key=lambda t: -t[1])[:3]
+            dn = sorted([x for x in vals if pd.notna(x[1]) and x[1] < 0], key=lambda t:  t[1])[:3]
+            return up, dn
+
+        explains["cortisol_proxy"] = contribs([
+            ("estrés", z["estres"], +0.30),
+            ("activación", z["activacion"], +0.25),
+            ("café", z["cafe_cucharaditas"], +0.15),
+            ("despertares", z["despertares_nocturnos"], +0.10),
+            ("poca luz matinal", -z["sun_morning"], +0.10),
+            ("poco sueño", -z["horas_sueno"], +0.20),
+        ])
+        explains["melatonina_proxy"] = contribs([
+            ("calidad de sueño", z["sueno_calidad"], +0.35),
+            ("menos pantallas", -z["screen"], +0.25),
+            ("luz diurna", z["exposicion_sol_min"], +0.15),
+            ("menos alcohol", -z["alcohol_ud"], +0.15),
+            ("regularidad horario", -z["bed_irreg"], +0.10),
+        ])
+        explains["insulin_sens_proxy"] = contribs([
+            ("glicemia baja", -z["glicemia"], +0.40),
+            ("ejercicio", z["tiempo_ejercicio_min"], +0.25),
+            ("horas de sueño", z["horas_sueno"], +0.15),
+            ("menos alcohol", -z["alcohol_ud"], +0.10),
+            ("alimentación", _znorm_roll(_series_or_zero(df, "alimentacion"), win), +0.10),
+        ])
+        explains["apetito_proxy"] = contribs([
+            ("más sueño", z["horas_sueno"], +0.40),
+            ("calidad de sueño", z["sueno_calidad"], +0.20),
+            ("menos estrés/ansiedad", -anx_mix, +0.20),
+            ("ejercicio", z["tiempo_ejercicio_min"], +0.10),
+            ("menos pantallas tarde", -z["screen"], +0.10),
+        ])
+        explains["catecolaminas_proxy"] = contribs([
+            ("estrés", z["estres"], +0.35),
+            ("ansiedad", z["ansiedad"], +0.20),
+            ("estimulantes", 0.6*z["cafe_cucharaditas"] + 0.4*stim_z, +0.20),
+            ("mov. intensidad", move_proxy, +0.15),
+            ("poco sueño reparador", -z["sueno_calidad"], +0.10),
+        ])
+
+    return scores, explains
+
+def hormones_section_html(df: pd.DataFrame, row_idx: int = -1) -> str:
+    scores, explains = hormones_proxies(df, win=30, row_idx=row_idx)
+
+    if scores is None or scores.empty:
+        return "<div class='section'><h2>Ejes fisiológicos (proxies)</h2><div class='small'>Sin datos suficientes.</div></div>"
+
+    ridx = _clamp_idx(len(scores), row_idx if row_idx is not None else len(scores)-1)
+    row = scores.iloc[ridx]
+
     labels = [
-        ("Ansiedad", "signal_ansiedad"),
-        ("Hipomanía-like", "signal_hipomania_like"),
-        ("Sesgo depresivo", "signal_depresivo"),
-        ("Sobrecarga/burnout", "signal_burnout"),
+        ("Cortisol-like",     "cortisol_proxy",     "carga/activación matinal"),
+        ("Melatonina-like",   "melatonina_proxy",   "presión de sueño/ritmo nocturno"),
+        ("Sens. a insulina",  "insulin_sens_proxy", "respuesta metabólica"),
+        ("Control de apetito","apetito_proxy",      "equilibrio hambre/saciedad"),
+        ("Catecolaminas",     "catecolaminas_proxy","tono simpático"),
     ]
+
+    css_local = """
+<style>
+#horm-prox .grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px }
+#horm-prox .card{ border:1px solid rgba(0,0,0,.08); border-radius:12px; padding:12px }
+#horm-prox .kpi{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px }
+#horm-prox .badge{ font-weight:700; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,.06) }
+#horm-prox .small{ opacity:.8 }
+#horm-prox .bar{ height:8px; background:rgba(0,0,0,.08); border-radius:8px; overflow:hidden; margin-top:6px }
+#horm-prox .bar > div{ height:100%; width:0; background:#22a063 }
+@media (prefers-color-scheme: dark){
+  #horm-prox .card{ border-color: rgba(255,255,255,.12) }
+  #horm-prox .badge{ background: rgba(255,255,255,.10) }
+  #horm-prox .bar{ background: rgba(255,255,255,.12) }
+}
+</style>
+""".strip()
+
     cards = []
-    for lab, key in labels:
-        v = float(row.get(key, np.nan)) if len(row) else np.nan
-        vw = 0 if (pd.isna(v) or v<0) else min(100, round(v*100))
-        vtxt = "" if pd.isna(v) else f"{v:.2f}"
+    for title, key, sub in labels:
+        v = row.get(key, np.nan)
+        vw = 0 if (pd.isna(v) or v < 0) else min(100, int(round(float(v)*100)))
+        vtxt = "s/d" if pd.isna(v) else f"{float(v):.2f}"
         cards.append(f"""
         <div class="card">
-          <div class="kpi"><strong>{lab}</strong><span class="badge">{vtxt}</span></div>
+          <div class="kpi"><strong>{title}</strong><span class="badge">{vtxt}</span></div>
+          <div class="small">{sub}</div>
           <div class="bar"><div style="width:{vw}%;"></div></div>
         </div>
-        """)
-    grid = f"<div class='grid' style='grid-template-columns:repeat(2,1fr);gap:12px'>{''.join(cards)}</div>"
+        """.strip())
+
+    grid = f"<div class='grid'>{''.join(cards)}</div>"
+
+    def mk_text(key):
+        up_dn = explains.get(key, ([], []))
+        if not isinstance(up_dn, tuple) or len(up_dn) != 2:
+            return "—"
+        up, dn = up_dn
+        def fmt(lst, pref):
+            if not lst: return ""
+            txt = ", ".join(l for (l, _) in lst)
+            return f"{pref}: {txt}. "
+        base = {
+            "cortisol_proxy":     "Cortisol-like: mayor = más carga/activación. ",
+            "melatonina_proxy":   "Melatonina-like: mayor = mejor presión de sueño. ",
+            "insulin_sens_proxy": "Sensibilidad a insulina: mayor = mejor. ",
+            "apetito_proxy":      "Control de apetito: mayor = mejor equilibrio hambre/saciedad. ",
+            "catecolaminas_proxy":"Catecolaminas: mayor = más tono simpático. ",
+        }.get(key, "")
+        return base + fmt(up, "Impulsaron") + fmt(dn, "Atenuaron")
+
+    items = "".join(f"<li>{mk_text(key)}</li>" for _, key, _ in labels)
+
+    how_calc = (
+        "<div class='small'>Cómo se estima: z-scores móviles (30d) de variables relevantes "
+        "(↑/↓ según fisiología), combinados y mapeados a 0–1 con función sigmoide. "
+        "Ej.: cortisol-like ↑ con más estrés, activación, café y despertares; ↓ con más sueño y luz matinal. "
+        "Estos son <strong>proxies orientativos</strong>; no equivalen a exámenes clínicos.</div>"
+    )
+
     return f"""
-    <div class="section">
-      <h2>Patrones sugeridos</h2>
-      <div class="card"><div class="small">{txt}</div></div>
-      <div class="section">{grid}</div>
-      <div class="small" style="margin-top:8px">Heurísticas personalizadas (no diagnósticos). Usa esto para guiar la conversación clínica.</div>
+    <div id="horm-prox" class="section">
+      {css_local}
+      <h2>Ejes fisiológicos (proxies)</h2>
+      {grid}
+      <div class="section">
+        <div class="card"><ul class="small">{items}</ul></div>
+        {how_calc}
+      </div>
     </div>
-    """
+    """.strip()
+
 
 targets = ["animo","claridad","estres","activacion"]
 labels = {"animo":"Ánimo","claridad":"Claridad","estres":"Estrés","activacion":"Activación"}
@@ -329,48 +387,6 @@ def trend_label(delta: float):
         return "estable"
     return "sin dato"
 
-def narrative_summary_inline(df):
-    wb = wellbeing_index(df, targets=targets)
-    dwb = wb.diff().iloc[-1] if len(wb.dropna())>=2 else float("nan")
-    wb_lbl = trend_label(dwb)
-    pts = []
-    for t in targets:
-        if t in df.columns and len(pd.to_numeric(df[t], errors="coerce").dropna())>=2:
-            dy = pd.to_numeric(df[t], errors="coerce").diff().iloc[-1]
-            lbl = trend_label(dy)
-            if t == "estres" and lbl == "al alza": lbl += " (desfavorable)"
-            if t == "estres" and lbl == "a la baja": lbl += " (favorable)"
-            pts.append(f"{labels[t]} {lbl} (Δ{dy:+.2f})")
-    out = [f"Bienestar compuesto (WB) {wb_lbl}."]
-    if pts: out.append("Estado por target → " + " | ".join(pts))
-    return " ".join(out)
-
-def descriptive_summary_inline(df, row_idx=-1, top_k=2):
-    wb = wellbeing_index(df, targets=targets)
-    dwb = wb.diff().iloc[-1] if len(wb.dropna())>=2 else float("nan")
-    wb_lbl = trend_label(dwb)
-    tgt_lines = []
-    for t in targets:
-        if t in df.columns and len(pd.to_numeric(df[t], errors="coerce").dropna())>=2:
-            dy = pd.to_numeric(df[t], errors="coerce").diff().iloc[-1]
-            lbl = trend_label(dy)
-            if t == "estres" and lbl == "al alza": lbl += " (desfavorable)"
-            if t == "estres" and lbl == "a la baja": lbl += " (favorable)"
-            tgt_lines.append(f"{labels[t].lower()} {lbl} (Δ{dy:+.2f})")
-    reasons = []
-    for t in targets:
-        res = drivers_del_dia(df, t, top_k=top_k, row_idx=row_idx)
-        tab = res.get("tabla")
-        if isinstance(tab, pd.DataFrame) and not tab.empty:
-            pos = tab.sort_values("contrib", ascending=False).head(top_k)["feature"].tolist()
-            neg = tab.sort_values("contrib", ascending=True).head(top_k)["feature"].tolist()
-            pos_h = ", ".join(pos) if pos else "—"
-            neg_h = ", ".join(neg) if neg else "—"
-            reasons.append(f"{labels[t]}: apoyaron {pos_h}; restaron {neg_h}.")
-    out = [f"Su bienestar compuesto está {wb_lbl}."]
-    if tgt_lines: out.append("Por targets: " + "; ".join(tgt_lines) + ".")
-    if reasons: out.append("Motivos probables del día: " + " ".join(reasons))
-    return " ".join(out)
 
 def day_label(df):
     if "fecha" in df.columns:
@@ -385,31 +401,6 @@ def day_label(df):
 def choose_model_tag():
     return "EMA"
 
-def report_variables(df, targets):
-    # Deltas for cards
-    deltas = {t: last_delta(df[t]) if t in df.columns else float("nan") for t in targets}
-
-    # Build report pieces
-    short_sum = narrative_summary_inline(df)
-    verbose_sum = descriptive_summary_inline(df, row_idx=-1, top_k=2)
-    habits_html = habits_section_html(df)
-    patterns_html = patterns_section_html(df)
-    wb = wellbeing_index(df, targets=targets)
-    wb_last = float(wb.iloc[-1]) if len(wb.dropna()) else float("nan")
-
-    # Drivers tables
-    driver_tables = {}
-    for t in targets:
-        res = drivers_del_dia(df, t, top_k=3, row_idx=-1)
-        tab = res.get("tabla")
-        if isinstance(tab, pd.DataFrame) and not tab.empty:
-            pos = tab.sort_values("contrib", ascending=False).head(3)
-            neg = tab.sort_values("contrib", ascending=True).head(3)
-            show = pd.concat([pos, neg]).drop_duplicates()
-            driver_tables[t] = show
-        else:
-            driver_tables[t] = pd.DataFrame(columns=["feature","contrib"])
-    return deltas, short_sum, verbose_sum, habits_html, patterns_html, wb_last, driver_tables
 
 def trend_badge(t, val):
     cls = "neutral"
@@ -442,6 +433,19 @@ css = """
   --accent: #7c83ff;
 }
 * { box-sizing: border-box; }
+/* Secciones a pantalla completa */
+.fullscreen-section{
+  min-height: 100svh; /* 100% alto de pantalla, robusto en mobile */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;   /* o 'center' si quieres centrar */
+  gap: 12px;
+  padding: 16px 0;               /* respiro vertical */
+  box-sizing: border-box;
+  overflow: auto;                 /* si el contenido excede la pantalla, scrollea dentro */
+}
+.container.snap-y { scroll-snap-type: y proximity; }
+.fullscreen-section { scroll-snap-align: start; }
 body { margin:0; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
 .container { max-width: 1100px; margin: 40px auto; padding: 0 16px; }
 .header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 18px; }
@@ -489,10 +493,152 @@ def df_to_table(dfx: pd.DataFrame):
     </table>
     """
 
-def build_ema_report(df, target_mail, targets=targets):
-    df = df[df['correo'] == target_mail]
-    deltas, short_sum, verbose_sum, habits_html, patterns_html, wb_last, driver_tables = report_variables(df, targets)
+def build_ema_report(
+    df: pd.DataFrame,
+    target_email: str,
+    targets,
+    target_day: str | None = None,   # "25-08-2025"
+    lookback_days: int = 14
+) -> str:
+    if "fecha" in df.columns:
+        _f = pd.to_datetime(df["fecha"], dayfirst=True, errors="coerce")
+        df = df.iloc[_f.argsort(kind="mergesort")].reset_index(drop=True)
+        fechas = pd.to_datetime(df["fecha"], dayfirst=True, errors="coerce").dt.date
+    else:
+        fechas = pd.to_datetime(df.index, errors="coerce").date
 
+    # 2) Resolver índice del día objetivo
+    # target_day es "%d-%m-%Y"
+    def _find_row_idx_for_day(df, target_day: str) -> int:
+        fechas = pd.to_datetime(df["fecha"], format="%d-%m-%Y", errors="coerce").dt.date
+        td = pd.to_datetime(target_day, format="%d-%m-%Y", errors="coerce").date()
+        exact = np.where(fechas.values == td)[0]
+        if exact.size: return int(exact[-1])
+        leq = np.where((pd.notna(fechas.values)) & (fechas.values <= td))[0]
+        return int(leq[-1]) if leq.size else len(df)-1
+
+    row_idx = _find_row_idx_for_day(df, target_day)
+
+    #row_idx = (len(df) - 1) if not target_day else _find_row_idx_for_day(target_day)
+
+    # 3) Piezas del informe (todas con row_idx consistente)
+    deltas, short_sum, verbose_sum, habits_html, patterns_html, kpi_html, wb_day, driver_tables, guia_html = \
+        report_variables(df, targets, lookback_days=lookback_days, row_idx=row_idx)
+
+    # 4) Proxies fisiológicos del día elegido
+    hormones_html = hormones_section_html(df, row_idx=row_idx)
+
+    # 5) Tarjetas de targets con Δ del día elegido
+    def _delta_at(series: pd.Series, idx: int) -> float:
+        s = pd.to_numeric(series, errors="coerce")
+        if idx <= 0 or idx >= len(s): return float("nan")
+        a, b = s.iloc[idx], s.iloc[idx-1]
+        return float(a - b) if (pd.notna(a) and pd.notna(b)) else float("nan")
+
+    cards_html = ""
+    for t in targets:
+        icon = icons.get(t, "•")
+        s = pd.to_numeric(df.get(t, pd.Series(dtype=float)), errors="coerce")
+        val = s.iloc[row_idx] if len(s) else float("nan")
+        delta = _delta_at(s, row_idx)
+        def badge_html(tname, d):
+            cls = "neutral"; arrow = "→"
+            if isinstance(d, float) and not math.isnan(d):
+                thr = 0.4
+                if d > thr: cls, arrow = "up", "↑"
+                elif d < -thr: cls, arrow = "down", "↓"
+                else: cls, arrow = "neutral", "→"
+            if tname == "estres":
+                if cls == "up": cls = "bad"
+                elif cls == "down": cls = "good"
+            return f'<span class="badge {cls}">{arrow} {d:+.2f}</span>' if isinstance(d, float) and not math.isnan(d) else '<span class="badge neutral">s/d</span>'
+
+        cards_html += f"""
+        <div class="card">
+          <h3><span class="icon">{icon}</span> {labels[t]}</h3>
+          <div class="big">Último: <strong>{'' if (isinstance(val, float) and math.isnan(val)) else f'{val:.2f}'}</strong> {badge_html(t, delta)}</div>
+          <div class="kicker small">Δ vs. día anterior (umbral ±0.4)</div>
+        </div>
+        """
+
+    # 6) Drivers (tabla) – ya están calculados con row_idx en report_variables si los usas más abajo
+    drivers_sections = ""
+    for t in targets:
+        tab = driver_tables.get(t)
+        if isinstance(tab, pd.DataFrame) and not tab.empty:
+            rows = "\n".join(f"<tr><td>{r.feature}</td><td>{r.contrib:+.3f}</td></tr>" for r in tab.itertuples(index=False))
+            table_html = f"""<table class="table"><thead><tr><th>Driver</th><th>Contribución Δ</th></tr></thead><tbody>{rows}</tbody></table>"""
+        else:
+            table_html = '<div class="small">Sin señal suficiente para hoy.</div>'
+        drivers_sections += f"""
+        <div class="section">
+          <h2>{labels[t]}: Drivers del día</h2>
+          {table_html}
+        </div>
+        """
+
+    # 7) Cabecera (fecha del día elegido + WB de ese día)
+    if "fecha" in df.columns:
+        head_date = pd.to_datetime(df["fecha"], dayfirst=True, errors="coerce").dt.strftime("%d-%m-%Y (%a)").iloc[row_idx]
+    else:
+        head_date = str(row_idx)
+
+    html = f"""<!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="utf-8" />
+      <title>Informe BDP – EMA</title>
+      {css}
+    </head>
+    <body>
+    <div class="container">
+      <div class="header">
+        <div>
+          <div class="h1">Informe BDP <span class="chip">EMA</span></div>
+          <div class="sub">{head_date} • Índice de bienestar (WB) día: {'' if (isinstance(wb_day, float) and math.isnan(wb_day)) else f'{wb_day:.2f}'}</div>
+        </div>
+        <div class="sub">Generado: {datetime.now().strftime("%d-%m-%Y %H:%M")}</div>
+      </div>
+
+      <div class="grid">
+        {cards_html}
+      </div>
+
+      <div class="section">
+        <h2>Resumen breve</h2>
+        <div class="textblock">{short_sum}</div>
+      </div>
+
+      <div class="section">
+        <h2>Interpretación descriptiva</h2>
+        <div class="textblock">{verbose_sum}</div>
+      </div>
+
+      <div style="padding:50px"></div>
+      {habits_html}
+      {patterns_html}
+      {guia_html}
+      {kpi_html}
+      {hormones_html}
+      {drivers_sections}
+
+      <div class="footer">Informe BDP — generado automáticamente. Este reporte es orientativo y no reemplaza evaluación profesional.</div>
+    </div>
+    </body>
+    </html>"""
+
+    OUTDIR = Path("output"); OUTDIR.mkdir(parents=True, exist_ok=True)
+    outfile = OUTDIR / "informeBDP_EMA.html"
+    outfile.write_text(html, encoding="utf-8")
+    print("Saved:", outfile)
+    return str(outfile)
+
+
+
+def _build_ema_report(df, target_mail, targets=targets, row_idx=-1):
+    df = df[df['correo'] == target_mail]
+    deltas, short_sum, verbose_sum, habits_html, patterns_html, kpi_html, wb_last, driver_tables, guia_html = report_variables(df, targets, row_idx)
+    hormones_html = hormones_section_html(df)
     if (len(df) == 0):
         print("Correo no encontrado")
         return
@@ -549,24 +695,38 @@ def build_ema_report(df, target_mail, targets=targets):
         </div>
         <div class="sub">Generado: {datetime.now().strftime("%d-%m-%Y %H:%M")}</div>
         </div>
+        
+        <div id='intro-section' class='fullscreen-section'>
+            <div class="grid">
+            {cards_html}
+            </div>
 
-        <div class="grid">
-        {cards_html}
+            <div class="section">
+            <h2>Resumen breve</h2>
+            <div class="textblock">{short_sum}</div>
+            </div>
+
+            <div class="section">
+            <h2>Interpretación descriptiva</h2>
+            <div class="textblock">{verbose_sum}</div>
+            </div>
         </div>
 
-        <div class="section">
-        <h2>Resumen breve</h2>
-        <div class="textblock">{short_sum}</div>
+        <div id='habits-section' class='fullscreen-section'>
+            {habits_html}
         </div>
 
-        <div class="section">
-        <h2>Interpretación descriptiva</h2>
-        <div class="textblock">{verbose_sum}</div>
+        <div id='patterns-section' class='fullscreen-section'>
+            {patterns_html}
         </div>
 
-        {habits_html}
+        {guia_html}
 
-        {patterns_html}
+        <div id='kpi-section' class='fullscreen-section'>
+            {kpi_html}
+        </div>
+
+        {hormones_html}
 
         {drivers_sections}
 
@@ -582,4 +742,4 @@ def build_ema_report(df, target_mail, targets=targets):
     outfile = OUTDIR / "informeBDP_EMA.html"
     outfile.write_text(html, encoding="utf-8")
     print("Saved:", outfile)
-    return df
+    return str(outfile)

@@ -1,0 +1,21 @@
+{
+  "default": {
+    "agua_litros": ["min", 1.6],
+    "tiempo_ejercicio_min": ["min", 30],
+    "meditacion_min": ["min", 10],
+    "exposicion_sol_min": ["min", 15],
+    "tiempo_pantalla_noche_min": ["max", 60],
+    "alcohol_ud": ["max", 1],
+    "cafe_cucharaditas": ["max", 0],
+    "horas_sueno": ["min", 7],
+    "sueno_calidad": ["min", 6],
+    "tiempo_pantallas": ["max", 180]
+  },
+  "personas": {
+    "demo@correo.cl": {
+      "agua_litros": ["min", 2.0],
+      "cafe_cucharaditas": ["max", 2],
+      "tiempo_ejercicio_min": ["min", 40]
+    }
+  }
+}
