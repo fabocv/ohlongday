@@ -77,20 +77,20 @@
 ### 3.1 Sueño y descanso
 - **Duración de sueño (h):**  
   Si `hora_dormir` > `hora_despertar`, sumar 24h al despertar.  
-  $$\mathrm{sueno\_duracion\_h} = \frac{\mathrm{despertar} - \mathrm{dormir}}{60}$$
+  $${\mathrm{sueno\_duracion}_h} = \frac{\mathrm{despertar} - \mathrm{dormir}}{60}$$
 - **Déficit de sueño (h):** respecto a objetivo personal (ej. 7.5 h).  
-  $$\mathrm{sueno\_deficit_h} = 7.5 - \mathrm{sueno\_duracion\_h}$$
+  $${\mathrm{sueno\_deficit}_h} = 7.5 - {\mathrm{sueno\_duracion}_h}$$
 - **Indicador de fragmentación:**  
   $$\mathrm{sueno\_fragmentacion} = \mathrm{scale}( \mathrm{despertares\_nocturnos} )$$
 - **Índice de sueño compuesto (0–10):** pondera calidad, duración y fragmentación:  
-  $$I_{sueno} = 0.5\cdot \mathrm{norm}(\mathrm{sueno\_calidad}) + 0.35\cdot \mathrm{norm}(\mathrm{sueno\_duracion\_h}) - 0.15\cdot \mathrm{norm}(\mathrm{sueno\_fragmentacion})$$
+  $$I_{sueno} = 0.5\cdot \mathrm{norm}(\mathrm{sueno\_calidad}) + 0.35\cdot \mathrm{norm}({\mathrm{sueno\_duracion\}_h}) - 0.15\cdot \mathrm{norm}(\mathrm{sueno\_fragmentacion})$$
 
 ### 3.2 Movimiento y energía
 - **Carga de actividad (AU):**  
   $$\mathrm{actividad\_carga} = \mathrm{mov\_intensidad}\times \sqrt{\mathrm{tiempo\_ejercicio (min)}}$$
 - **Recuperación rápida (proxy):** si `siesta_min`>0 y `actividad_carga` alta → +recuperación.
 - **Índice metabólico/energía (0–10):**  
-  $$I_{energia} = 0.45\cdot \mathrm{norm}(\mathrm{actividad\_carga}) + 0.35\cdot \mathrm{norm}(I_{sueno}) + 0.20\cdot \mathrm{norm}(-|\mathrm{glicemia}-\mu_{g}|),$$
+  $$I_{energia} = 0.45\cdot \mathrm{norm}(\mathrm{actividad\_carga}) + 0.35\cdot \mathrm{norm} (I_{sueno}) + 0.20\cdot \mathrm{norm}(-|\mathrm{glicemia}-\mu_{g}|)$$
   donde $$\(\mu_{g}\)$$ es el **rango objetivo personal** (p.ej. 80–110 mg/dL en ayunas). Se penaliza desviación absoluta.
 
 ### 3.3 Estimulantes / depresores
@@ -153,7 +153,7 @@ S_t^- &= -\,z(\mathrm{estres}_t)
   > Ajustables por validación personal o aprendizaje (sección 8).
 
 - **Índice de Carga (Stress Load):**  
-  $$SL_t = z(\mathrm{estres}_t) + 0.3\cdot \mathrm{scale}(\mathrm{eventos\_estresores}) + 0.2\cdot \mathrm{scale}(\mathrm{tiempo\_pantalla\_noche\_min})$$
+  $$SL_t = z(\mathrm{estres}_t) + 0.3\cdot \mathrm{scale}(\mathrm{eventos\_estresores}) + 0.2\cdot \mathrm{scale}(\mathrm{tiempo\_pantalla}\mathrm{\_noche}\mathrm{\_min})$$
 
 - **Índice Energético (Energy):** usar \(I_{energia}\) (3.2) y su z.
 
@@ -167,9 +167,9 @@ $$AX_t = 0.40\,z(\mathrm{estres}_t) + 0.25\,z(\mathrm{ansiedad}_t) + 0.15\,z_r(\
 
 ### 7.2 Hipomanía-proxy (HYPO)
 $$\begin{aligned}
-HYPO_t =\ & 0.35\,z(\mathrm{activacion}_t) + 0.20\,z(\mathrm{animo}_t) \\
-& - 0.15\,\mathrm{norm}(\mathrm{sueno\_duracion\_h}_t) + 0.10\,\mathrm{scale}(\mathrm{cafeina\_mg}_t) \\
-& + 0.10\,\mathrm{scale}(\mathrm{interacciones\_significativas}_t) + 0.10\,\mathrm{scale}(\mathrm{impulso\_nocturno}_t)
+HYPO_t =\ & 0.35\,z({\mathrm{activacion}}_t) + 0.20\,z({\mathrm{animo}}_t) \\
+& - 0.15\,\mathrm{norm}({\mathrm{sueno\_duracion\_h}}_t) + 0.10\,\mathrm{scale}({\mathrm{cafeina\_mg}}_t) \\
+& + 0.10\,\mathrm{scale}(\mathrm{interacciones\_significativas}_t) + 0.10\,\mathrm{scale}({\mathrm{impulso\_nocturno}}_t)
 \end{aligned}$$
 - `impulso_nocturno` ~ combinación de `tiempo_pantalla_noche_min`, juego nocturno, compras/decisiones impulsivas (si etiqueta existe).
 - **Lectura:** ↑HYPO sugiere patrón de **alta activación con menor descanso**.
