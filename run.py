@@ -1,6 +1,6 @@
 from bdp.utils.helpers import _preprocess_csv_for_coach
 import pandas as pd
-import sys, argparse
+import sys, argparse, json
 
 input_csv ="bdp_sample.csv"
 targets = "animo,claridad,estres,activacion".split(",")
@@ -20,12 +20,23 @@ def parse_known_args(argv=None):
     p.add_argument("--start", "-s", help="Fecha inicio (dd-MM-YYYY)")
     p.add_argument("--end", "-e", help="Fecha fin (dd-MM-YYYY)")
     p.add_argument("--tag", "-t", help="Filtrar por tag (subcadena)")
-    p.add_argument("--email", "-m", default=target_email, help="Filtrar por correo (columna 'correo')")
+    p.add_argument("--email", "-m", help="Filtrar por correo (columna 'correo')")
     return p.parse_known_args(argv)
 
+def init():
+    try:
+        with open('personal.json') as f:
+            d = json.load(f)
+            return d['email']
+    except Exception:
+        return None
+        
 def dataset(input_csv = input_csv, target_email = target_email):
     # Preprocesa: normaliza hora 'a. m./p. m.', garantiza 'fecha'/'hora', filtra por correo
-    return _preprocess_csv_for_coach(input_csv, target_email)
+    data = _preprocess_csv_for_coach(input_csv, target_email)
+    print("%i registros, desde el %s HASTA el %s" % (
+    len(data), data['fecha'].iloc[[0]].item(), data['fecha'].iloc[[-1]].item() )) 
+    return data
     
 if __name__ == "__main__":
     args, _ = parse_known_args(sys.argv[1:])
@@ -41,10 +52,16 @@ if __name__ == "__main__":
         input_csv = args.input
     else:
         print("Leyendo archivo CSV '%s' (defecto)" % input_csv)
-        
+
+    print("args-email: %s" % args.email)
+    
     if (args.email is not None):
+        print("Asignando email %s" % args.email)
         target_email = args.email
     else:
+        load_mail_user = init()
+        if ( load_mail_user ) :
+            target_email = load_mail_user
         print ("Asumiendo que todos los registros son suyos.")
         
     dataset(input_csv, target_email)

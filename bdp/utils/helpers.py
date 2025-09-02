@@ -106,7 +106,7 @@ def _coerce_hhmm_latam_ampm(s: pd.Series) -> pd.Series:
 
 def _preprocess_csv_for_coach(input_csv: str, email: str | None) -> pd.DataFrame :
     # 1) Lee y normaliza columnas (si tienes normalizador propio, úsalo aquí)
-    print("archivo: %s   |   correo: %s " % (input_csv, email) )
+    print("archivo: %s   |   correo: %s... " % (input_csv, email[0:3]) )
     try:
         with open(input_csv, "r") as file:
             data = file.read()
