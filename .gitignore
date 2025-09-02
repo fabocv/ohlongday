@@ -6,3 +6,5 @@ __pycache__
 outputs
 bdp_sample*
 *katas*
+*.pdf
+bdp/templates/*.png

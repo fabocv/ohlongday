@@ -1,6 +1,7 @@
 from bdp.utils.helpers import _preprocess_csv_for_coach
 import pandas as pd
 import sys, argparse, json
+from bdp.informe import gen_informe
 
 input_csv ="bdp_sample.csv"
 targets = "animo,claridad,estres,activacion".split(",")
@@ -14,8 +15,8 @@ target_day = "26-08-2025"
 
 def parse_known_args(argv=None):
     p = argparse.ArgumentParser(description="Genera el informe BDP (coaching).")
-    p.add_argument("--input", "-i", default="data/bdp_sample.csv", help="Ruta CSV de entrada")
-    p.add_argument("--output", "-o", default="output/informe.html", help="Ruta HTML de salida")
+    p.add_argument("--input", "-i", default="bdp_sample.csv", help="Ruta CSV de entrada")
+    p.add_argument("--output", "-o", default="informe.html", help="Ruta HTML de salida")
     p.add_argument("--config", "-c", default="reporte_python.bdp_config.json", help="Ruta JSON de configuración (opcional)")
     p.add_argument("--start", "-s", help="Fecha inicio (dd-MM-YYYY)")
     p.add_argument("--end", "-e", help="Fecha fin (dd-MM-YYYY)")
@@ -37,6 +38,12 @@ def dataset(input_csv = input_csv, target_email = target_email):
     print("%i registros, desde el %s HASTA el %s" % (
     len(data), data['fecha'].iloc[[0]].item(), data['fecha'].iloc[[-1]].item() )) 
     return data
+
+def generar_informe(dataset: pd.DataFrame):
+    if (dataset is None or len(dataset) == 0):
+        print("Sin datos válidos en su CSV.")
+        return
+    return gen_informe(dataset)
     
 if __name__ == "__main__":
     args, _ = parse_known_args(sys.argv[1:])
@@ -64,4 +71,4 @@ if __name__ == "__main__":
             target_email = load_mail_user
         print ("Asumiendo que todos los registros son suyos.")
         
-    dataset(input_csv, target_email)
+    generar_informe( dataset(input_csv, target_email) )
