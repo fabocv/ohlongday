@@ -7,6 +7,22 @@ from typing import List, Dict, Any
 
 pd.set_option('future.no_silent_downcasting', True)
 
+def to_minutes(t):
+    # t en "HH:MM"
+    h, m = map(int, str(t).split(":"))
+    return h*60 + m
+
+def sleep_hours(gr):
+    # usa último dormir y último despertar del día; si despertar < dormir, cruza medianoche
+    try:
+        d = to_minutes(gr["hora_dormir"].dropna().iloc[-1])
+        w = to_minutes(gr["hora_despertar"].dropna().iloc[-1])
+        if w < d: w += 24*60
+        siesta = gr.get("siesta_min", pd.Series([0])).fillna(0).sum()
+        return (w - d)/60 + siesta/60
+    except Exception:
+        return np.nan
+
 def _norm(s: str) -> str:
     if s is None: return ""
     s = str(s)

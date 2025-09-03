@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from bdp.bienestar import calc_resumen
-from bdp.utils.tendencias import generar_grafico_tendencias
+from bdp.calcs.bienestar import *
+from bdp.calcs.bloques import bloques, sleep_hours
+from bdp.utils.tendencias import generar_grafico_tendencias_altair
+from bdp.calcs.espiritual import espirit_semana
 from weasyprint import HTML
 import os
 
@@ -12,7 +14,7 @@ env = Environment(
 
 
 context = {
-    "periodo": {"titulo": "Semana 35", "rango_humano": "25–31 Ago"},
+    "periodo": {"titulo": "Semana 35", "rango_humano": "26 Ago – 2 Sept"},
     "resumen": {"estado": "estable", "frase_humana": "Buenos cimientos; afina el descanso."},
     "kpi": {
         "bienestar_nivel": "medio",
@@ -45,28 +47,11 @@ context = {
 }
 
 
-
-# ---- Helpers
-def to_minutes(t):
-    # t en "HH:MM"
-    h, m = map(int, str(t).split(":"))
-    return h*60 + m
-
-def sleep_hours(gr):
-    # usa último dormir y último despertar del día; si despertar < dormir, cruza medianoche
-    try:
-        d = to_minutes(gr["hora_dormir"].dropna().iloc[-1])
-        w = to_minutes(gr["hora_despertar"].dropna().iloc[-1])
-        if w < d: w += 24*60
-        siesta = gr.get("siesta_min", pd.Series([0])).fillna(0).sum()
-        return (w - d)/60 + siesta/60
-    except Exception:
-        return np.nan
-
 agg = {
   # medias
   "animo":"mean","activacion":"mean","conexion":"mean","proposito":"mean","claridad":"mean","estres":"mean",
-  "mov_intensidad":"mean","glicemia":"mean",
+  "mov_intensidad":"mean","glicemia":"mean", "irritabilidad": "mean", "ansiedad": "mean", "dolor_fisico": "mean",
+
   # sumas
   "meditacion_min":"sum","siesta_min":"sum","tiempo_ejercicio":"sum",
   "juego_en_dispositivo_min":"sum","juego_en_persona_min":"sum",
@@ -74,135 +59,129 @@ agg = {
   "cafe_cucharaditas":"sum","alcohol_ud":"sum",
   # max/último
   "tiempo_pantalla_noche_min":"max","cafe_ultima_hora":"max","alcohol_ultima_hora":"max",
-  "hora_dormir":"last","hora_despertar":"last",
+  "hora_dormir":"last","hora_despertar":"last", "espiritual":"last","sueno_calidad": "max",
+  "despertares_nocturnos":"max"
+
 }
 
-def variable_nivel(score: float) -> str:
-    if pd.isna(score):
-        return "—"
-    if score < 3:
-        return "bajo"
-    if score < 7:
-        return "medio"
-    return "alto"
-
-def indicadores(daily, variable, normal = 1.0):
-    variable_score_mean = daily[variable].tail(7).mean()
-    nivel = variable_nivel(variable_score_mean)
-    last = daily[variable].iloc[-1]
-    prev = daily[variable].iloc[-2]
-
-    variable_score = "%.2f/10" % variable_score_mean
-     
-    variable_delta_ayer_hoy = last - prev
-
-    
-
-    if normal * variable_delta_ayer_hoy > 0:
-        signo = "+" if normal==1 else "-"
-        return variable_score, nivel, ("%s%.2f" % (signo, (normal *variable_delta_ayer_hoy))), "up"
-    elif normal * variable_delta_ayer_hoy < 0:
-        signo = "-" if normal==1 else "+"
-        return variable_score, nivel, ("%s%.2f" % (signo, (-1*normal *variable_delta_ayer_hoy))) , "down"
-    else:
-        return variable_score, nivel, "s/variar", "flat"
-
-def bienestar_delta(daily: pd.DataFrame):
-    return indicadores(daily,"bienestar")
-
-def animo_delta(daily: pd.DataFrame):
-    return indicadores(daily,"animo")
-
-def estres_delta(daily: pd.DataFrame):
-    return indicadores(daily,"estres", normal = -1.0)
-
-def claridad_delta(daily: pd.DataFrame):
-    return indicadores(daily,"claridad")
-
-def tendencia_bienestar(daily):
-    ema_now = daily["bienestar_ema"].iloc[-1]
-    ema_prev = daily["bienestar_ema"].iloc[-7] if len(daily) >= 7 else daily["bienestar_ema"].iloc[0]
-    slope = ema_now - ema_prev
-
-    if slope > 0.7:
-        tendencia = "fuerte ↑"
-    elif slope > 0.2:
-        tendencia = "suave ↑"
-    elif slope < -0.7:
-        tendencia = "fuerte ↓"
-    elif slope < -0.2:
-        tendencia = "suave ↓"
-    else:
-        tendencia = "estable"
 
 
-    return tendencia
-
-def bienestar(daily):
-    alpha = 0.30  # el peso a lo más reciente
-    daily = daily.sort_values("fecha")  # asegúrate que está ordenado
-    daily["bienestar_ema"] = (
-        daily["bienestar"]
-        .ewm(alpha=alpha, adjust=False)
-        .mean()
-    )
-    bienestar_score, bienestar_nivel, bienestar_fmt, bienestar_clase = bienestar_delta(daily)
-    animo_score, animo_nivel, animo_fmt, animo_clase = animo_delta(daily)
-    estres_score, estres_nivel, estres_fmt, estres_clase = estres_delta(daily)
-    claridad_score, claridad_nivel, claridad_fmt, claridad_clase = claridad_delta(daily)
-
-    out = calc_resumen(daily=daily)
-
-    out_path =  os.getcwd() + "/bdp/templates/tendencia.png"
-    grafico = generar_grafico_tendencias(daily, out_path, out_path)
-
-    context.update({
-        "resumen": {"estado": out["estado"], "frase_humana": out["frase_humana"]},
-    })
-
-    kpi = {
-        "bienestar_nivel": bienestar_nivel,
-        "bienestar_score":  bienestar_score,
-        "bienestar_delta_fmt": bienestar_fmt ,
-        "bienestar_delta_clase": bienestar_clase,
-        "tendencia": tendencia_bienestar(daily),
-        "ema_label": "α=0.30 • L=14",
-        "animo_nivel": animo_score, "animo_delta_fmt": animo_fmt, "animo_delta_clase": animo_clase,
-        "estres_nivel": estres_score, "estres_delta_fmt": estres_fmt, "estres_delta_clase":  estres_clase,
-        "claridad_nivel": claridad_score, "claridad_delta_fmt": claridad_fmt, "claridad_delta_clase": claridad_clase,
-    }
-
-    context.update({ "kpi": kpi, "charts": {"main_src": out_path, "dias": 7},})
 
 
 def datos_diarios(df):
     df["fecha"] = pd.to_datetime(df["fecha"], dayfirst=True).dt.date
     daily = df.groupby("fecha").agg(agg).reset_index()
-    daily["sueno_duracion_h"] = df.groupby("fecha").apply(sleep_hours).values
+
+    
+    #bloque sueño semanal usandoc columna calculada: sueno
+    daily["sueno"] = daily.groupby("fecha").apply(sleep_hours).values
+
+    daily["estres_inv"]   = (10 - daily["estres"]).clip(0,10)
+    # Bienestar WB
+    # WB=f(Aˊnimo,Activacioˊn,Conexioˊn,Propoˊsito,Claridad)−g(Estreˊs percibido)
+    daily["bienestar"] = (
+        daily["animo"]*0.25 + daily["claridad"]*0.25 + daily["conexion"]*0.20 +
+        daily["activacion"]*0.15 + daily["proposito"]*0.15
+    ) - daily["estres_inv"]*0.1
+
+    # EMA (alpha≈0.30); ajusta lookback en la interpretación, no en ewm
+    #daily = daily.sort_values("fecha")
+    daily["bienestar_ema"] = daily["bienestar"].ewm(alpha=0.30, adjust=False).mean()
+    print(daily["bienestar_ema"])
+    daily["estres_inv_ema"]= daily["estres_inv"].ewm(alpha=0.30, adjust=False).mean()
+    
+
+    limite_cafe_diario = 6
+    cafe_exceso = (daily["cafe_cucharaditas"] - limite_cafe_diario).clip(lower=0)
+    # target 7.5h -> ajusta a tu realidad
+    sleep_def = (7.5 - daily["sueno"]).clip(lower=0)  # más déficit => más carga
+
+    A, B = 4.0, 7.0
+    mov = daily["mov_intensidad"]
+    mov_costo = (A - mov).clip(lower=0) + (mov - B).clip(lower=0)
+
+    def despertares_escalonada(interrupciones):
+        if(interrupciones == 0): return 0
+        if(interrupciones == 1): return 2
+        if(interrupciones == 2): return 5
+        if(interrupciones == 3): return 8
+        else: return 10
+
+    #CMt​=w1​⋅(Suen˜o deficiente)+w2​⋅(Glicemia anoˊmala)+w3​⋅(Alcohol/cafeıˊna)+w4​⋅(Deˊficit/exceso de movimiento)
+    if daily["glicemia"].isna:
+        daily["carga_metabolica"] = (
+            0.40*sleep_def.fillna(0) +
+            0.15*daily["alcohol_ud"].fillna(0) +
+            0.10*cafe_exceso.fillna(0) +
+            0.35*mov_costo.fillna(0)
+        )
+    else:
+        daily["carga_metabolica"] = (
+            0.35*sleep_def.fillna(0) +
+            0.10*daily["glicemia"] +
+            0.15*daily["alcohol_ud"].fillna(0) +
+            0.10*cafe_exceso.fillna(0) +
+            0.30*mov_costo.fillna(0)
+        )
+
+    print(daily["carga_metabolica"])
+
+    # Malestar MBt
+    # MBt​=h(Estreˊs percibido,Irritabilidad,Dolor fıˊsico,Suen˜o deficiente,Carga metaboˊlica)
+
+    #
+    calidad_sueno = 10 - daily["sueno_calidad"]
+    
+    daily["malestar"] =  (
+        daily["estres"]*0.18 + daily["irritabilidad"]*0.22 + daily["ansiedad"]*0.2 + daily["dolor_fisico"]*0.12 
+        + daily["carga_metabolica"] *0.12 + (calidad_sueno) * 0.16
+    )
+
+    daily["malestar_ema"] = daily["malestar"].ewm(alpha=0.30, adjust=False).mean()
+
+    print(daily["malestar_ema"])
+
+    daily["bienestar_neto_ema"] = daily["bienestar_ema"] - daily["malestar_ema"]
+
+    print(daily["bienestar_neto_ema"])
+    
 
     # Normalizaciones simples a 0–10 (ejemplo)
     for col in ["animo","activacion","conexion","proposito","claridad","estres"]:
         if col in daily:
             daily[col] = daily[col].clip(0,10)
 
-    # Bienestar compuesto (ejemplo legible; ajusta pesos luego)
-    daily["bienestar"] = (
-        daily["animo"]*0.25 + daily["claridad"]*0.25 + daily["conexion"]*0.20 +
-        daily["activacion"]*0.15 + (10 - daily["estres"])*0.15
-    )
+    
 
-    bienestar(daily)
+    out_path =  os.getcwd() + "/bdp/templates/tendencia.png"
+    out = calc_resumen(daily=daily)
 
-    # EMA (alpha≈0.30); ajusta lookback en la interpretación, no en ewm
-    daily = daily.sort_values("fecha")
-    daily["bienestar_ema"] = daily["bienestar"].ewm(alpha=0.30, adjust=False).mean()
-    daily["estres_inv"]   = (10 - daily["estres"]).clip(0,10)
-    daily["estres_inv_ema"]= daily["estres_inv"].ewm(alpha=0.30, adjust=False).mean()
+    context.update({
+        "resumen": {"estado": out["estado"], "frase_humana": out["frase_humana"]},
+    })
+
+    kpi = kpi_bienestar(daily)
+
+    context.update({ "kpi": kpi, "charts": {"main_src": out_path, "dias": 7},})
+
+    data_bloques = bloques(daily, df)
+    context.update({"bloques": data_bloques})
+
 
     # Confianza
     n_dias = daily["fecha"].nunique()
     conf = "baja" if n_dias < 10 else ("media" if n_dias < 30 else "alta")
     print(f"Días={n_dias}, Entradas={len(df)}, Confianza={conf}")
+
+
+    res = generar_grafico_tendencias_altair(
+        daily,
+        out_html=out_path.replace(".png", ".html"),
+        out_png=out_path,   # opcional
+        smooth_raw=True,
+        title="Tendencia de Bienestar (7–14d)"
+    )
+
     return daily
 
 def preparar_datos(daily: pd.DataFrame):
@@ -234,7 +213,3 @@ def gen_informe(df: pd.DataFrame) :
     HTML(string=html_rendered, base_url=".").write_pdf("Mi BDP.pdf")
     print("reporte generado como 'Mi BDP.pdf")
     return diarios
-
-
-
-

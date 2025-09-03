@@ -1,5 +1,6 @@
 import math
 import pandas as pd
+from bdp.calcs.indicadores import *
 
 def bucket_bienestar(score):
     if pd.isna(score): return "—"
@@ -30,9 +31,22 @@ def delta_fmt(series):
     else: cls="flat"
     return fmt, cls
 
+def bienestar_delta(daily: pd.DataFrame):
+    return indicadores(daily,"bienestar")
+
+def animo_delta(daily: pd.DataFrame):
+    return indicadores(daily,"animo")
+
+def estres_delta(daily: pd.DataFrame):
+    print(daily["estres"])
+    return indicadores(daily,"estres", normal = -1.0)
+
+def claridad_delta(daily: pd.DataFrame):
+    return indicadores(daily,"claridad")
+
 def calc_resumen(daily: pd.DataFrame, col="bienestar", alpha=0.30):
     """
-    daily: DataFrame diario ordenado por fecha asc (fecha, bienestar, bienestar_ema optional, ansiedad_proxy, hipomania_proxy, sueno_duracion_h, tiempo_pantalla_noche_min)
+    daily: DataFrame diario ordenado por fecha asc (fecha, bienestar, bienestar_ema optional, ansiedad_proxy, hipomania_proxy, sueno, tiempo_pantalla_noche_min)
     Devuelve dict con: estado, frase_humana, confianza, accion_corta, comentario_tecnico (opcional)
     """
     out = {}
@@ -71,7 +85,7 @@ def calc_resumen(daily: pd.DataFrame, col="bienestar", alpha=0.30):
     # Señales de apoyo
     ansiedad = float(d["ansiedad_proxy"].tail(7).mean()) if "ansiedad_proxy" in d.columns else math.nan
     hipomania = float(d["hipomania_proxy"].tail(7).mean()) if "hipomania_proxy" in d.columns else math.nan
-    sleep_h = float(d["sueno_duracion_h"].tail(7).mean()) if "sueno_duracion_h" in d.columns else math.nan
+    sleep_h = float(d["sueno"].tail(7).mean()) if "sueno" in d.columns else math.nan
     pantallas = float(d["tiempo_pantalla_noche_min"].tail(7).mean()) if "tiempo_pantalla_noche_min" in d.columns else math.nan
 
     # Etiquetas rápidas
@@ -135,3 +149,50 @@ def calc_resumen(daily: pd.DataFrame, col="bienestar", alpha=0.30):
     out["accion_corta"] = accion
     out["comentario_tecnico"] = f"Días={n_dias} · Confianza={confianza}"
     return out
+
+
+
+def tendencia_bienestar(daily):
+    ema_now = daily["bienestar_ema"].iloc[-1]
+    ema_prev = daily["bienestar_ema"].iloc[-7] if len(daily) >= 7 else daily["bienestar_ema"].iloc[0]
+    slope = ema_now - ema_prev
+
+    if slope > 0.7:
+        tendencia = "fuerte ↑"
+    elif slope > 0.2:
+        tendencia = "suave ↑"
+    elif slope < -0.7:
+        tendencia = "fuerte ↓"
+    elif slope < -0.2:
+        tendencia = "suave ↓"
+    else:
+        tendencia = "estable"
+
+
+    return tendencia
+
+def kpi_bienestar(daily, alpha = 0.30):
+    daily = daily.sort_values("fecha")  # asegúrate que está ordenado
+    daily["bienestar_ema"] = (
+        daily["bienestar"]
+        .ewm(alpha=alpha, adjust=False)
+        .mean()
+    )
+    bienestar_datos, bienestar_score, bienestar_nivel, bienestar_fmt, bienestar_clase    = bienestar_delta(daily)
+    animo_datos, animo_score, animo_nivel, animo_fmt, animo_clase                    = animo_delta(daily)
+    estres_datos, estres_score, estres_nivel, estres_fmt, estres_clase                = estres_delta(daily)
+    claridad_datos, claridad_score, claridad_nivel, claridad_fmt, claridad_clase        = claridad_delta(daily)
+
+    kpi = {
+        "bienestar_nivel": bienestar_nivel,
+        "bienestar_score":  bienestar_score,
+        "bienestar_delta_fmt": bienestar_fmt ,
+        "bienestar_delta_clase": bienestar_clase,
+        "tendencia": tendencia_bienestar(daily),
+        "ema_label": "α=0.30 • L=14",
+        "animo_nivel": animo_score, "animo_delta_fmt": animo_fmt, "animo_delta_clase": animo_clase,
+        "estres_nivel": estres_score, "estres_delta_fmt": estres_fmt, "estres_delta_clase":  estres_clase,
+        "claridad_nivel": claridad_score, "claridad_delta_fmt": claridad_fmt, "claridad_delta_clase": claridad_clase,
+    }
+
+    return kpi
