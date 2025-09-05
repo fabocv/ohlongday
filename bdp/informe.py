@@ -3,8 +3,15 @@ import numpy as np
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from bdp.calcs.bienestar import *
 from bdp.calcs.bloques import bloques, sleep_hours
-from bdp.utils.tendencias import generar_grafico_tendencias_altair
+from bdp.utils.helpers import *
+from bdp.utils.tendencias import generar_grafico_bienestar_seaborn
 from bdp.calcs.espiritual import espirit_semana
+from bdp.calcs.glicemia import compute_s_gly
+from bdp.calcs.sueno import *
+from bdp.calcs.ejercicio import *
+from bdp.calcs.pantallas import compute_WBN, build_ptn_from_screens
+from bdp.calcs.otras_sustancias import *
+from bdp.calcs.carga_metabolica import *
 from weasyprint import HTML
 import os
 
@@ -56,94 +63,138 @@ agg = {
   "meditacion_min":"sum","siesta_min":"sum","tiempo_ejercicio":"sum",
   "juego_en_dispositivo_min":"sum","juego_en_persona_min":"sum",
   "micro_reparaciones":"sum","interacciones_significativas":"sum",
-  "cafe_cucharaditas":"sum","alcohol_ud":"sum",
+  "cafe_cucharaditas":"sum","alcohol_ud":"sum", 
   # max/último
-  "tiempo_pantalla_noche_min":"max","cafe_ultima_hora":"max","alcohol_ultima_hora":"max",
+  "tiempo_pantalla_noche_min":"max","cafe_ultima_hora":"last","alcohol_ultima_hora":"max",
   "hora_dormir":"last","hora_despertar":"last", "espiritual":"last","sueno_calidad": "max",
-  "despertares_nocturnos":"max"
+  "despertares_nocturnos":"max", "otras_sustancias": "last"
 
 }
 
 
 
-
-
+'''
+Funcion principal que calcula los datos del dataframe y 
+exporta como json para ser rendereados.
+'''
 def datos_diarios(df):
     df["fecha"] = pd.to_datetime(df["fecha"], dayfirst=True).dt.date
     daily = df.groupby("fecha").agg(agg).reset_index()
 
-    
+    context.update({ "datos": {"validos": len(daily)}})
+
     #bloque sueño semanal usandoc columna calculada: sueno
-    daily["sueno"] = daily.groupby("fecha").apply(sleep_hours).values
+    daily["sueno"] = sleep_hours_rowwise(daily["hora_dormir"], daily["hora_despertar"])
+    s_sleep = s_sleep_carga_de_sueno_total(daily).fillna(0)
+    s_gly, s_gly_plot, meta_gly = compute_s_gly(daily, plot_impute=True)
+    s_caf = s_exceso(daily["cafe_cucharaditas"], limite=6, k=2).fillna(0)  # ~2 pts por cdta extra
+    s_alc = s_exceso(daily["alcohol_ud"], limite=0, k=2).fillna(0)  # o limite=1 si aceptas 1 UD
+    s_mov = s_u_shape(daily["mov_intensidad"], A=4.0, B=7.0, k=2).fillna(0)
+   
+    # Carga metabólica (CM) 0–10
+    # 1) Deriva columnas desde 'otras_sustancias'
+    deriv = parse_otras_sustancias(daily["otras_sustancias"])
+    daily = pd.concat([daily, deriv], axis=1)
 
-    daily["estres_inv"]   = (10 - daily["estres"]).clip(0,10)
-    # Bienestar WB
-    # WB=f(Aˊnimo,Activacioˊn,Conexioˊn,Propoˊsito,Claridad)−g(Estreˊs percibido)
-    daily["bienestar"] = (
-        daily["animo"]*0.25 + daily["claridad"]*0.25 + daily["conexion"]*0.20 +
-        daily["activacion"]*0.15 + daily["proposito"]*0.15
-    ) - daily["estres_inv"]*0.1
+    sub_daily = sustancias_to_daily(df, fecha_col="fecha", bloque_col="bloque", otras_col="otras_sustancias")
 
-    # EMA (alpha≈0.30); ajusta lookback en la interpretación, no en ewm
-    #daily = daily.sort_values("fecha")
-    daily["bienestar_ema"] = daily["bienestar"].ewm(alpha=0.30, adjust=False).mean()
-    print(daily["bienestar_ema"])
-    daily["estres_inv_ema"]= daily["estres_inv"].ewm(alpha=0.30, adjust=False).mean()
-    
+    # B) Convierte eventos → equivalentes
+    sub_daily = eventos_a_equivalentes(sub_daily, event_to_cig=1.0, event_to_joint=1.0, night_bonus=0.25)
 
-    limite_cafe_diario = 6
-    cafe_exceso = (daily["cafe_cucharaditas"] - limite_cafe_diario).clip(lower=0)
-    # target 7.5h -> ajusta a tu realidad
-    sleep_def = (7.5 - daily["sueno"]).clip(lower=0)  # más déficit => más carga
+    # C) Une con tu 'daily' principal (WB/CM/sueño/etc.)
+    # A) sub_daily viene de sustancias_to_daily(df_raw, ...)
+    # B) Tu df crudo “trabajado” (no daily) está en `df_raw_trabajado`
+    daily = prepare_for_merge_on_fecha(df, sub_daily, left_col="fecha", right_col="fecha")
 
-    A, B = 4.0, 7.0
-    mov = daily["mov_intensidad"]
-    mov_costo = (A - mov).clip(lower=0) + (mov - B).clip(lower=0)
-
-    def despertares_escalonada(interrupciones):
-        if(interrupciones == 0): return 0
-        if(interrupciones == 1): return 2
-        if(interrupciones == 2): return 5
-        if(interrupciones == 3): return 8
-        else: return 10
-
-    #CMt​=w1​⋅(Suen˜o deficiente)+w2​⋅(Glicemia anoˊmala)+w3​⋅(Alcohol/cafeıˊna)+w4​⋅(Deˊficit/exceso de movimiento)
-    if daily["glicemia"].isna:
-        daily["carga_metabolica"] = (
-            0.40*sleep_def.fillna(0) +
-            0.15*daily["alcohol_ud"].fillna(0) +
-            0.10*cafe_exceso.fillna(0) +
-            0.35*mov_costo.fillna(0)
-        )
-    else:
-        daily["carga_metabolica"] = (
-            0.35*sleep_def.fillna(0) +
-            0.10*daily["glicemia"] +
-            0.15*daily["alcohol_ud"].fillna(0) +
-            0.10*cafe_exceso.fillna(0) +
-            0.30*mov_costo.fillna(0)
-        )
-
-    print(daily["carga_metabolica"])
-
-    # Malestar MBt
-    # MBt​=h(Estreˊs percibido,Irritabilidad,Dolor fıˊsico,Suen˜o deficiente,Carga metaboˊlica)
-
-    #
-    calidad_sueno = 10 - daily["sueno_calidad"]
-    
-    daily["malestar"] =  (
-        daily["estres"]*0.18 + daily["irritabilidad"]*0.22 + daily["ansiedad"]*0.2 + daily["dolor_fisico"]*0.12 
-        + daily["carga_metabolica"] *0.12 + (calidad_sueno) * 0.16
+    daily["sueno"] = sleep_hours_rowwise(daily["hora_dormir"], daily["hora_despertar"])
+    # 2) Llama a tu compute_CM usando las columnas derivadas
+    CM, cm_meta = compute_CM(
+        daily,
+        col_sleep_score="s_sleep",
+        col_glicemia="glicemia",                 # si no existe, renormaliza
+        col_alcohol_units="alcohol_ud",
+        col_cafe_cucharaditas="cafe_cucharaditas",
+        col_mov_min="tiempo_ejercicio",          # o col_mov_intensidad="mov_intensidad"
+        col_alim_score="alimentacion",         # ya en 0–10
+        col_agua_litros="agua_litros",
+        # ← aquí las derivadas:
+        col_nic_mg="nicotina_mg",
+        col_nic_puffs="nicotina_puffs",
+        col_thc_mg="thc_mg",
+        col_nic_cigs="nic_cigs_equiv",
+        col_thc_joints="thc_joints_equiv",
     )
 
-    daily["malestar_ema"] = daily["malestar"].ewm(alpha=0.30, adjust=False).mean()
 
-    print(daily["malestar_ema"])
+    daily["carga_metabolica"] = CM
 
-    daily["bienestar_neto_ema"] = daily["bienestar_ema"] - daily["malestar_ema"]
+     # Activación efectiva: penaliza fuera de [4,7]; 2.5 = 10/dmax con dmax=4
+    daily["activacion_eff"] = daily["activacion"].astype(float).pipe(
+        lambda s: (s * (1 - ((2.5 * ((4 - s).clip(lower=0) + (s - 7).clip(lower=0))).clip(upper=10) / 10)))).clip(lower=0)
 
-    print(daily["bienestar_neto_ema"])
+    #Malestar
+    MB = (0.22*daily["estres"] + 0.20*daily["irritabilidad"] + 0.20*daily["ansiedad"]
+      + 0.13*daily["dolor_fisico"] + 0.25*CM).clip(0,10)
+
+    # Bienestar (WB) y Neto (WBN)
+    WB  = (0.3*daily["animo"] + 0.20*daily["claridad"] + 0.20*daily["conexion"]
+        + 0.20*daily["activacion_eff"] + 0.10*daily["proposito"] - 0.10*daily["estres"])
+    WB_ema = WB.ewm(alpha=0.30, adjust=False).mean()
+    MB_ema = MB.ewm(alpha=0.30, adjust=False).mean()
+    WBN    = (WB_ema - MB_ema)
+
+    # 1) Construir PTN con bloques (suma por día)
+    daily = build_ptn_from_screens(
+        daily,
+        col_fecha="fecha",
+        col_noche_explicit="tiempo_pantalla_noche_min",   # si no la tienes, omite y usa col_noche_block
+        col_manana="tiempo_pantallas",          # opcional
+        col_tarde="tiempo_pantallas",            # opcional
+        col_noche_block="tiempo_pantalla_noche_min",      # si no tienes la explícita, puedes reutilizar
+        apply_shift_d1=True,                               # efecto al día siguiente
+        gamma_luz_azul=0.6                                # ↑ si quieres más sensibilidad a últimas 2h
+    )
+
+    daily["bienestar"] = WB
+    daily["bienestar_ema"] = WB_ema
+    daily["malestar"] = MB
+    daily["malestar_ema"] = MB_ema
+
+    # 2) Calcular WBN = WB - MB - PTN_d1
+    daily["bienestar_neto"] = compute_WBN(daily, col_WB="bienestar_ema", col_MB="malestar_ema", col_PTN_d1="PTN_d1", clip_0_10=True)
+
+
+    daily = compute_exercise_effect(
+        daily,
+        col_min="tiempo_ejercicio",
+        col_int="mov_intensidad",
+        col_hora_ej="hora_ejercicio",      # si no la tienes, la función se adapta
+        col_hora_dormir="hora_dormir",     # si no la tienes, factor horario=1.0
+        alpha_ex=0.4,
+        rho_today=0.35,
+        rho_d1=0.25
+    )
+
+    daily = apply_exercise_to_WBN(
+        daily,
+        col_WB="bienestar_ema",
+        col_MB="malestar_ema",
+        col_PTN_today="PTN_today",
+        col_PTN_d1="PTN_d1",
+        relief_MB_mu=0.25,   # pon 0.0 si no quieres tocar MB
+        clip_0_10=True
+    ) # WBN_ex
+
+    out_path_cm =  os.getcwd() + "/bdp/templates/cm_sparkline.png" 
+    res = grafico_cm_sparkline_seaborn(
+        daily,
+        out_png= out_path_cm,
+        out_svg= out_path_cm.replace(".png",".svg"),   # opcional
+        width_px=800,                     # ajusta al contenedor
+        height_px=70,                     # jamás excede 50 px
+        y_domain=(0,10),
+        show_band=True
+    )
     
 
     # Normalizaciones simples a 0–10 (ejemplo)
@@ -154,15 +205,18 @@ def datos_diarios(df):
     
 
     out_path =  os.getcwd() + "/bdp/templates/tendencia.png"
-    out = calc_resumen(daily=daily)
-
-    context.update({
-        "resumen": {"estado": out["estado"], "frase_humana": out["frase_humana"]},
-    })
+    
 
     kpi = kpi_bienestar(daily)
 
-    context.update({ "kpi": kpi, "charts": {"main_src": out_path, "dias": 7},})
+    context.update({ 
+        "kpi": kpi, 
+        "charts": {
+            "main_src": out_path,
+            "cm_png": out_path_cm,
+            "dias": 7},
+        }
+    )
 
     data_bloques = bloques(daily, df)
     context.update({"bloques": data_bloques})
@@ -174,13 +228,18 @@ def datos_diarios(df):
     print(f"Días={n_dias}, Entradas={len(df)}, Confianza={conf}")
 
 
-    res = generar_grafico_tendencias_altair(
+    res = generar_grafico_bienestar_seaborn(
         daily,
         out_html=out_path.replace(".png", ".html"),
         out_png=out_path,   # opcional
-        smooth_raw=True,
-        title="Tendencia de Bienestar (7–14d)"
+        #title="Tendencia de Bienestar Neto (7–14d)"
     )
+
+    out = calc_resumen_plus(daily=daily,col="WBN_ex")
+
+    context.update({
+        "resumen": {"estado": out["estado"], "frase_humana": out["frase_humana"]},
+    })
 
     return daily
 

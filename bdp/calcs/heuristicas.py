@@ -68,7 +68,15 @@ PHRASE = {
     3: ["Creciente conexión espiritual."],
     4: ["Movida: prioriza calidad."],
     5: ["Sólida: sin rigidez."]
-  }
+  },
+  "carga_metab": {
+    0: ["F0."],
+    1: ["F1"],
+    2: ["F2"],
+    3: ["F3"],
+    4: ["F4"],
+    5: ["F5"]
+  },
 }
 
 def frase_bloque(tipo:str, score:float, seed=None):
@@ -114,6 +122,12 @@ INSIGHT_BASE = {
     "medio": "Sostén 10′ y añade 1 práctica distinta/semana.",
     "bueno": "Buena práctica: calidad y foco.",
     "alto": "Mantén sin rigidez; integra gratitud breve."
+  },
+  "carga_metab": {
+    "bajo": "CM BAJA.",
+    "medio": "CM MEDIA.",
+    "bueno": "CM BUENA",
+    "alto": "CM ALTA"
   }
 }
 
@@ -220,6 +234,7 @@ def build_ctx(df):
     # Safe gets
     pantallas = float(g.get('tiempo_pantalla_noche_min').mean()) if 'tiempo_pantalla_noche_min' in g else None
     alcohol   = float(g.get('alcohol_ud').sum()) if 'alcohol_ud' in g else None
+    carga_metabolica = float(g.get('carga_metabolica').mean()) if 'carga_metabolica' in g else None
     mov       = float(g.get('mov_intensidad').mean()) if 'mov_intensidad' in g else None
     sueno_sc  = float(g.get('sueno').mean()) if 'sueno' in g else None
     act_sc    = float(g.get('activacion').mean()) if 'activacion' in g else None
@@ -234,6 +249,7 @@ def build_ctx(df):
         "activacion_score": act_sc,
         "estres_score": estres_sc,
         "cafe_tarde_bool": cafe_tarde,
+        "carga_metabolica":carga_metabolica
     }
 
 def render_dashboard(df, theme="calido", modo='fair', consistencias=None, deltas=None):
@@ -251,11 +267,12 @@ def render_dashboard(df, theme="calido", modo='fair', consistencias=None, deltas
         "activacion": weekly_score(df, 'activacion', modo) if 'activacion' in df.columns else None,
         "sueno": weekly_score(df, sueno_col, modo) if sueno_col else None,
         "conexion": weekly_score(df, 'conexion', modo) if 'conexion' in df.columns else None,
-        "espiritual": weekly_score(df, 'E_d', modo) if 'E_d' in df.columns else None
+        "espiritual": weekly_score(df, 'E_d', modo) if 'E_d' in df.columns else None,
+        "carga_metabolica": weekly_score(df, "carga_metabolica",modo)
     }
 
     out = {}
-    for k in ["activacion", "sueno", "conexion", "espiritual"]:
+    for k in ["activacion", "sueno", "conexion", "espiritual", "carga_metabolica"]:
         sc = scores[k]
         delta = (deltas or {}).get(k)   # puedes pasar EMA-slope si ya lo calculas
         cons  = (consistencias or {}).get(k, None)

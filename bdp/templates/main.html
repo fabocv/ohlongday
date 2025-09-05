@@ -107,19 +107,25 @@
   </section>
 
   <!-- KPIs PRINCIPALES -->
-  <h2>Resumen en 4 claves</h2>
+  <h2>Resumen de Variables Percibidas</h2>
   <section class="row col-3">
     <div class="card">
-      <h3>🌱 Bienestar</h3>
+      <h3>🌱 Bienestar Percibido</h3>
       <div class="lead">{{ kpi.bienestar_score or "—" }} <sub class="sub">semana</sub> </div>
       <span class="chip {{ kpi.bienestar_delta_clase or 'flat' }}">{{ kpi.bienestar_delta_fmt or "±0.00" }} desde ayer</span>
       <div class="muted">Respecto a días previos</div>
     </div>
     <div class="card">
+      <h3>😵‍💫 Malestar Ponderado</h3>
+      <div class="lead">{{ kpi.mal_nivel or "—" }}</div>
+      <span class="chip {{ kpi.mal_delta_clase or 'flat' }}">{{ kpi.mal_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Ponderado de estres, ansiedad, irritab, mal sueño y cargas metabólicas </div>
+    </div>
+    <div class="card">
       <h3>🙂 Ánimo</h3>
       <div class="lead">{{ kpi.animo_nivel or "—" }}</div>
       <span class="chip {{ kpi.animo_delta_clase or 'flat' }}">{{ kpi.animo_delta_fmt or "±0.00" }} desde ayer</span>
-      <div class="muted">Tono emocional general</div>
+      <div class="muted">Tono emocional percibido</div>
     </div>
     <div class="card">
       <h3>😵‍💫 Estrés</h3>
@@ -128,10 +134,22 @@
       <div class="muted">Carga percibida (S⁻)</div>
     </div>
     <div class="card">
+      <h3>😵‍💫 Ansiedad</h3>
+      <div class="lead">{{ kpi.ans_nivel or "—" }}</div>
+      <span class="chip {{ kpi.ans_delta_clase or 'flat' }}">{{ kpi.ans_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Ansiedad percibida</div>
+    </div>
+    <div class="card">
       <h3>🧭 Claridad &amp; Propósito</h3>
       <div class="lead">{{ kpi.claridad_nivel or "—" }}</div>
       <span class="chip {{ kpi.claridad_delta_clase or 'flat' }}">{{ kpi.claridad_delta_fmt or "±0.00" }} desde ayer</span>
       <div class="muted">Dirección y foco</div>
+    </div>
+    <div class="card">
+      <h3>🌱 Bienestar Neto 🌱</h3>
+      <div class="lead">{{ kpi.bienestar_neto_score or "—" }} <sub class="sub">semana</sub> </div>
+      <span class="chip {{ kpi.bienestar_neto_delta_clase or 'flat' }}">{{ kpi.bienestar_neto_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Impacto de hábitos sobre el bienestar</div>
     </div>
   </section>
 
@@ -223,20 +241,20 @@
       <span class="pill">{{ bloques.espiritualidad.insight or "Meditación breve, constante" }}</span>
     </div>
     <div class="card">
-      <h3>🧩 Micro-reparaciones</h3>
-      <div class="lead">{{ bloques.microrep.cerradas or "—" }}</div>
-      <div class="muted">{{ bloques.microrep.frase or "Cierres alivian carga." }}</div>
-      <span class="pill">{{ bloques.microrep.insight or "1 diaria (≤10′)" }}</span>
+      <div class="card nobreak" style="flex:1 1 300pt; min-width:300pt;">
+      <h2>🧩 Carga Metabólica diaria</h2>
+      {% if charts.cm_png %}
+        <img src="{{ charts.cm_png }}" alt="Tendencia principal" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. Bienestar y su EMA)</div>
+      {% endif %}
+      <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
     </div>
-    <div class="card">
-      <h3>🎮 Juego</h3>
-      <div class="lead">{{ bloques.juego.minutos or "—" }} min</div>
-      <div class="muted">{{ bloques.juego.frase or "Digital vs. en persona." }}</div>
-      <span class="pill">{{ bloques.juego.insight or "En persona energiza más" }}</span>
     </div>
   </section>
 
   <!-- CAUSAS / MOMENTOS -->
+  <!--
   <div class="page-break"></div>
   <section class="row col-2">
     <div class="card">
@@ -295,6 +313,7 @@
     </div>
   </section>
 
+-->
   <p class="foot">
     Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
   </p>

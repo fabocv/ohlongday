@@ -33,6 +33,7 @@ def bloques(daily: pd.DataFrame, df: pd.DataFrame):
     sueno = info["sueno"]
     conex = info["conexion"]
     spirit = info["espiritual"]
+    c_met = info["carga_metabolica"]
 
     
 
@@ -41,8 +42,7 @@ def bloques(daily: pd.DataFrame, df: pd.DataFrame):
         "sueno":        {"calidad":sueno["score_txt"],"frase":sueno["frase"],"insight":sueno["insight"]},
         "conexion":     {"nivel":conex["score_txt"],"frase":conex["frase"],"insight":conex["insight"]},
         "espiritualidad":{"nivel": spirit["score_txt"],"frase": spirit["frase"],"insight":spirit["insight"]},
-        "microrep":     {"cerradas":"2","frase":"…","insight":"…"},
-        "juego":        {"minutos":"45","frase":"…","insight":"…"},
+        "carga_metab":  {"nivel": c_met["score_txt"],"frase": c_met["frase"],"insight":c_met["insight"]},
     }
 
     return new_bloques

@@ -69,13 +69,14 @@ def aplicar_fecha_logica(df: pd.DataFrame) -> pd.DataFrame:
     df['fecha_logica'] = (df['fecha_parsed'] - pd.to_timedelta(desplazar.astype(int), unit='D')).dt.normalize()
     return df
 
-def media_semanal_ultimos7(df: pd.DataFrame, col='E_d', modo='fair'):
+def media_semanal_ultimos7(df: pd.DataFrame, col, modo='fair'):
     if 'fecha_logica' not in df.columns:
         raise ValueError("Ejecuta primero aplicar_fecha_logica(df).")
     last_day = df['fecha_logica'].max()
     if pd.isna(last_day): return None, None, None, None
     idx7 = pd.date_range(last_day - pd.Timedelta(days=6), last_day, freq='D')
     serie = (df[['fecha_logica', col]].groupby('fecha_logica', as_index=True)[col].mean())
+    print(serie)
     if modo == 'fair':
         val = serie[serie.index.isin(idx7)].mean()
     elif modo == 'disciplina':
@@ -116,8 +117,8 @@ def espirit_semana(df):
 
 
     df = aplicar_fecha_logica(df)
-    fair = media_semanal_ultimos7(df, modo="fair")
-    disciplina = media_semanal_ultimos7(df, modo="disciplina")
+    fair = media_semanal_ultimos7(df, col="E_d", modo="fair")
+    disciplina = media_semanal_ultimos7(df, col="E_d", modo="disciplina")
 
     prom, desde, hasta, dias = media_semanal_ultimos7(df, col='E_d', modo='fair')
 

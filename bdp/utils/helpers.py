@@ -7,6 +7,25 @@ from typing import List, Dict, Any
 
 pd.set_option('future.no_silent_downcasting', True)
 
+# Exceso sobre un límite: (x - L)+ * k, saturado a 10
+def s_exceso(x, limite, k=1.0, top=10):
+    return ((x - limite).clip(lower=0) * k).clip(upper=top)
+
+# Déficit respecto a un objetivo: (T - x)+ * k, saturado a 10
+def s_deficit(x, objetivo, k=1.0, top=10):
+    return ((objetivo - x).clip(lower=0) * k).clip(upper=top)
+
+# U-shape respecto a [A, B]: distancia fuera del rango * k, saturado a 10
+def s_u_shape(x, A, B, k=1.0, top=10):
+    dist = (A - x).clip(lower=0) + (x - B).clip(lower=0)
+    return (dist * k).clip(upper=top)
+
+# Escalado robusto por cuantiles a 0–10 (opcional para outliers)
+def robust_scale_010(s, ql=0.10, qh=0.90):
+    a, b = s.quantile(ql), s.quantile(qh)
+    scaled = 10 * (s - a) / max(b - a, 1e-9)
+    return scaled.clip(0, 10)
+
 def to_minutes(t):
     # t en "HH:MM"
     h, m = map(int, str(t).split(":"))
@@ -185,3 +204,29 @@ def _preprocess_csv_for_coach(input_csv: str, email: str | None) -> pd.DataFrame
     #df.to_csv(out_path, index=False, encoding="utf-8")
     #return out_path
     return df
+
+def prepare_for_merge_on_fecha(left: pd.DataFrame, right: pd.DataFrame,
+                               left_col="fecha", right_col="fecha",
+                               dayfirst=True):
+    L = left.copy()
+    R = right.copy()
+
+    # 1) Parseo a datetime
+    for df, col in ((L, left_col), (R, right_col)):
+        if not pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=dayfirst)
+        # si viene con tz, lo volvemos naive
+        if pd.api.types.is_datetime64tz_dtype(df[col]):
+            df[col] = df[col].dt.tz_convert(None)
+
+        # 2) Normalizar a fecha (00:00:00)
+        df[col] = df[col].dt.normalize()
+
+    # 3) Asegurar 1 fila por fecha en el 'right' (por si acaso)
+    R = R.sort_values(right_col).drop_duplicates(subset=[right_col], keep="last")
+
+    # 4) Merge m:1 (crudo -> diario)
+    merged = L.merge(R, left_on=left_col, right_on=right_col, how="left", validate="m:1")
+    if right_col != left_col:
+        merged = merged.drop(columns=[right_col])
+    return merged

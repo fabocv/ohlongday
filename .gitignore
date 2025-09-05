@@ -8,3 +8,4 @@ bdp_sample*
 *katas*
 *.pdf
 bdp/templates/*.png
+bdp/templates/*.svg

@@ -1,99 +1,160 @@
 from pathlib import Path
+from typing import Optional, Tuple, Dict
+import numpy as np
 import pandas as pd
-import altair as alt
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
 
-def generar_grafico_tendencias_altair(df, out_html, out_png=None, smooth_raw=True, title=None):
-    # --- parseo y base (igual que antes, omitido por brevedad) ---
+def generar_grafico_bienestar_seaborn(
+    df: pd.DataFrame,
+    out_png: str,
+    out_svg: Optional[str] = None,
+    out_html: Optional[str] = None,
+    bienestar_neto = "WBN_ex",
+    title: str = "Bienestar: Autopercibido vs. Neto",
+    y_domain: Optional[Tuple[float, float]] = (0, 10),
+    smooth_neto_window: int = 0,  # 0 = sin suavizado; si pones 3–7 hace rolling mean
+) -> Dict[str, Optional[str]]:
+    """
+    Grafica:
+      - bienestar_ema  -> área + línea sólida
+      - bienestar_neto -> línea discontinua (opcional suavizado rolling)
+
+    Requisitos columnas: ['fecha', 'bienestar_ema', bienestar_neto].
+    Escala esperada: 0–10 (puedes desactivar y_domain para autoescalar).
+    """
+
     dfi = df.copy()
-    if not pd.api.types.is_datetime64_any_dtype(dfi['fecha']):
-        dfi['fecha'] = pd.to_datetime(dfi['fecha'], dayfirst=True, errors='coerce')
-    dfi = dfi.sort_values('fecha').reset_index(drop=True)
-    dfi['bienestar'] = pd.to_numeric(dfi['bienestar'], errors='coerce').astype(float)
-    dfi['bienestar_ema'] = pd.to_numeric(dfi['bienestar_ema'], errors='coerce').astype(float)
-    last_idx = len(dfi) - 1
-    dfi['is_last'] = False
-    if last_idx >= 0:
-        dfi.loc[last_idx, 'is_last'] = True
-        last_ema = dfi.loc[last_idx, 'bienestar_ema']
-        ema_label = f"EMA {last_ema:.2f}" if pd.notna(last_ema) else ""
 
-    accent_line = "#3aa882"; muted_line = "#56687a"; accent_fill = "#e9f7f2"; grid_color="#eef3f7"
+    # --- Parseo robusto ---
+    if "fecha" not in dfi.columns:
+        raise ValueError("Falta columna 'fecha'")
+    if not pd.api.types.is_datetime64_any_dtype(dfi["fecha"]):
+        dfi["fecha"] = pd.to_datetime(dfi["fecha"], dayfirst=True, errors="coerce")
 
-    def _theme_bdp():
-        return {"config":{
-            "background":"white","view":{"stroke":"transparent"},
-            "axis":{"labelColor":"#6b7a86","titleColor":"#6b7a86","gridColor":grid_color,
-                    "domainColor":"#e6eef6","tickColor":"#e6eef6","labelFontSize":11,"titleFontSize":12},
-            "legend":{"titleColor":"#6b7a86","labelColor":"#6b7a86","orient":"top-left","padding":4,"labelFontSize":11},
-            "title":{"color":"#3a4955","fontSize":14,"fontWeight":700,"anchor":"start"}}}
-    alt.themes.register('bdp_air', _theme_bdp); alt.themes.enable('bdp_air')
+    # Ordenar y tipar numérico
+    dfi = dfi.sort_values("fecha").reset_index(drop=True)
+    for col in ("bienestar_ema", bienestar_neto):
+        if col not in dfi.columns:
+            dfi[col] = np.nan
+        dfi[col] = pd.to_numeric(dfi[col], errors="coerce").astype(float)
 
-    base = alt.Chart(dfi).transform_calculate(ema_v="isValid(datum.bienestar_ema) ? datum.bienestar_ema : 0") \
-                         .properties(width=820, height=220, title=title or "")
-
-    area_ema = base.mark_area(opacity=0.9, color=accent_fill).encode(
-        x=alt.X('fecha:T', axis=alt.Axis(title=None, tickCount=6, format='%d %b')),
-        y=alt.Y('ema_v:Q', scale=alt.Scale(domain=[0,10]), axis=alt.Axis(title=None))
-    )
-    line_ema = alt.Chart(dfi).mark_line(stroke=accent_line, strokeWidth=2.2).encode(
-        x='fecha:T',
-        y=alt.Y('bienestar_ema:Q', scale=alt.Scale(domain=[0,10]), title=None),
-        tooltip=[alt.Tooltip('fecha:T', title='Fecha', format='%d %b %Y'),
-                 alt.Tooltip('bienestar_ema:Q', title='EMA', format='.2f')]
-    )
-    if smooth_raw and len(dfi)>=3 and dfi['bienestar'].notna().sum()>=3:
-        line_raw = (alt.Chart(dfi).transform_loess('fecha','bienestar',bandwidth=0.35)
-                    .mark_line(stroke=muted_line, strokeWidth=1.25)
-                    .encode(x='fecha:T', y=alt.Y('loess:Q', scale=alt.Scale(domain=[0,10]), title=None),
-                            tooltip=[alt.Tooltip('fecha:T', title='Fecha', format='%d %b %Y'),
-                                     alt.Tooltip('loess:Q', title='Bienestar (suave)', format='.2f')]))
-    else:
-        line_raw = alt.Chart(dfi).mark_line(stroke=muted_line, strokeWidth=1.25).encode(
-            x='fecha:T', y=alt.Y('bienestar:Q', scale=alt.Scale(domain=[0,10]), title=None),
-            tooltip=[alt.Tooltip('fecha:T', title='Fecha', format='%d %b %Y'),
-                     alt.Tooltip('bienestar:Q', title='Bienestar', format='.2f')]
+    # Suavizado opcional para NETO (rolling centrado)
+    if smooth_neto_window and smooth_neto_window >= 3:
+        dfi["bienestar_neto_smooth"] = (
+            dfi[bienestar_neto]
+            .rolling(window=smooth_neto_window, center=True, min_periods=1)
+            .mean()
         )
-    pts_last = alt.Chart(dfi[dfi['is_last']==True]).mark_point(
-        filled=True, size=85, color=accent_line, stroke='white', strokeWidth=1
-    ).encode(x='fecha:T', y=alt.Y('bienestar_ema:Q', scale=alt.Scale(domain=[0,10])))
-    txt_last = alt.Chart(dfi[dfi['is_last']==True]).mark_text(
-        align='left', dx=8, dy=-6, color=accent_line, fontWeight='bold'
-    ).encode(x='fecha:T', y='bienestar_ema:Q', text=alt.value(ema_label))
+        neto_col = "bienestar_neto_smooth"
+    else:
+        neto_col = bienestar_neto
 
-    chart = (area_ema + line_raw + line_ema + pts_last + txt_last) \
-        .configure_axisX(tickSize=0, domain=False) \
-        .configure_axisY(tickCount=6, values=[0,2,4,6,8,10], domain=False) \
-        .interactive(bind_y=False)
+    # --- Estilo seaborn ---
+    sns.set_theme(style="whitegrid",
+                  rc={"axes.spines.right": False, "axes.spines.top": False})
 
-    # HTML (siempre funciona)
-    inner = chart.to_html(embed_options={'actions': False})
-    card_css = """
-    <style>
-    .bdp-card{max-width:860px;margin:8px auto;padding:8px;background:#fff;border-radius:14px;
-              box-shadow:0 6px 22px rgba(16,24,40,0.08);border:1px solid #eef3f7;}
-    </style>"""
-    out_html_path = Path(out_html).resolve(); out_html_path.parent.mkdir(parents=True, exist_ok=True)
-    out_html_path.write_text(f"{card_css}\n<div class='bdp-card'>{inner}</div>", encoding='utf-8')
+    # Paleta
+    ema_line = "#2aa574"     # verde
+    ema_fill = "#e7f6f0"     # verde pálido
+    neto_line = "#55677a"    # gris azulado
 
-    # PNG opcional
-    out_png_path = None
-    if out_png:
-        out_png_path = Path(out_png).resolve()
-        try:
-            # Ruta 1: vl-convert (recomendada)
-            chart.save(out_png_path.as_posix(), method='vl-convert')
-        except Exception as e1:
-            try:
-                # Ruta 2: forzar una versión compatible de vegalite si el backend se queja
-                from altair_saver import Saver
-                saver = Saver(chart, method='vl-convert', vegalite_version='5.17.0')  # ajusta si tu backend soporta otra
-                saver.save(out_png_path.as_posix())
-            except Exception as e2:
-                try:
-                    # Ruta 3: selenium (si tu entorno tiene driver)
-                    chart.save(out_png_path.as_posix(), method='selenium')
-                except Exception:
-                    out_png_path = None  # sin PNG, pero HTML ya quedó OK
+    fig, ax = plt.subplots(figsize=(8.8, 3.4), dpi=160)
 
-    return {"html_path": out_html_path.as_posix(),
-            "png_path": out_png_path.as_posix() if out_png_path else None}
+    # --- EMA: área + línea ---
+    if dfi["bienestar_ema"].notna().any():
+        ax.fill_between(
+            dfi["fecha"], 0, dfi["bienestar_ema"],
+            where=~dfi["bienestar_ema"].isna(),
+            color=ema_fill, alpha=0.90, linewidth=0
+        )
+        sns.lineplot(
+            data=dfi, x="fecha", y="bienestar_ema",
+            ax=ax, linewidth=2.2, color=ema_line, label="Autopercibido (EMA)"
+        )
+
+    # --- Neto: línea discontinua ---
+    if dfi[neto_col].notna().any():
+        sns.lineplot(
+            data=dfi, x="fecha", y=neto_col,
+            ax=ax, linewidth=1.8, color=neto_line,
+            dashes=True, label="Neto"
+        )
+
+    # --- Anotaciones último punto por serie ---
+    def _anota_ultimo(col, color, dy):
+        s = dfi[col].dropna()
+        if s.empty:
+            return
+        idx = s.index[-1]
+        x = dfi.loc[idx, "fecha"]
+        y = dfi.loc[idx, col]
+        ax.scatter([x], [y], s=46, zorder=5, color=color, edgecolor="white", linewidth=1)
+        label = f"{'Autoperc.' if col=='bienestar_ema' else 'Neto'} {y:.2f}"
+        ax.annotate(label, (x, y), xytext=(8, dy), textcoords="offset points",
+                    color=color, fontsize=9, fontweight="bold")
+
+    _anota_ultimo("bienestar_ema", ema_line, dy=-8)
+    _anota_ultimo(neto_col, neto_line, dy=10)
+
+    # --- Formato ejes ---
+    ax.set_title(title, fontsize=12, weight="bold", color="#364554")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    if y_domain is not None:
+        ax.set_ylim(*y_domain)
+
+    # Fechas legibles
+    locator = AutoDateLocator(minticks=4, maxticks=8)
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(ConciseDateFormatter(locator))
+
+    # Leyenda limpia
+    leg = ax.legend(frameon=False, loc="upper left")
+    if leg:  # proteger por si no hay líneas
+        for t in leg.get_texts():
+            t.set_color("#546471")
+
+    plt.tight_layout()
+
+    # --- Guardados ---
+    out_png_path = Path(out_png).resolve()
+    out_png_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png_path, bbox_inches="tight")
+
+    out_svg_path = None
+    if out_svg:
+        out_svg_path = Path(out_svg).resolve()
+        fig.savefig(out_svg_path, bbox_inches="tight")
+
+    # HTML simple (img embebida)
+    out_html_path = None
+    if out_html:
+        out_html_path = Path(out_html).resolve()
+        out_html_path.parent.mkdir(parents=True, exist_ok=True)
+        html = f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<title>{title}</title>
+<style>
+body{{background:#f6f8fb;margin:0;padding:24px;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto}}
+.card{{max-width:900px;margin:0 auto;background:#fff;border-radius:14px;border:1px solid #e9eef5;
+box-shadow:0 6px 22px rgba(16,24,40,0.08);padding:10px}}
+.card img{{width:100%;display:block;border-radius:10px}}
+.hint{{color:#6b7a86;font-size:12px;margin:8px 2px}}
+</style></head>
+<body>
+  <div class="card">
+    <img src="{out_png_path.as_posix()}" alt="Tendencia de bienestar">
+    <div class="hint">Autopercibido (área verde) vs. Neto (línea discontinua).</div>
+  </div>
+</body></html>"""
+        out_html_path.write_text(html, encoding="utf-8")
+
+    plt.close(fig)
+
+    return {
+        "png_path": out_png_path.as_posix(),
+        "svg_path": out_svg_path.as_posix() if out_svg else None,
+        "html_path": out_html_path.as_posix() if out_html else None,
+    }
