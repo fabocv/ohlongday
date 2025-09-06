@@ -7,6 +7,158 @@ from typing import List, Dict, Any
 
 pd.set_option('future.no_silent_downcasting', True)
 
+def _series(s): return s if isinstance(s, pd.Series) else pd.Series([s])
+
+def join_unique(s, sep=" | ", limit=2000):
+    s = _series(s)
+    vals = [str(x).strip() for x in s.dropna().astype(str) if str(x).strip()]
+    uniq = list(dict.fromkeys(vals))  # preserva orden
+    out = sep.join(uniq)
+    return out[:limit] if limit else out
+
+def max_01(s):
+    s = _series(s)
+    num = pd.to_numeric(s, errors="coerce").fillna(0)
+    return int((num > 0).any())
+
+def mean_num(s):
+    s = _series(s)
+    num = pd.to_numeric(s, errors="coerce")
+    return float(num.mean()) if num.notna().any() else np.nan
+
+def smart_mean_or_join(s):
+    s = _series(s)
+    num = pd.to_numeric(s, errors="coerce")
+    ratio = num.notna().mean()
+    return mean_num(s) if ratio >= 0.60 else join_unique(s)
+
+def _strip_accents(txt):
+    if pd.isna(txt): return ""
+    return "".join(c for c in unicodedata.normalize("NFD", str(txt)) if unicodedata.category(c) != "Mn").lower().strip()
+
+def _norm_periodo(v):
+    s = _strip_accents(v)
+    if s in {"dia entero","entero","todo el dia","completo","dia"}: return "DIA"
+    if s in {"manana","am","morning"}: return "AM"
+    if s in {"tarde","pm","afternoon"}: return "PM"
+    if s in {"noche","night"}: return "NOCHE"
+    return "UNK"
+
+
+def _safe_agg_for(df_cols, agg):
+    return {k: v for k, v in agg.items() if k in df_cols}
+
+# ===================== agregados =====================
+def aggregate_by_block(df, agg):
+    """
+    Agrega por fecha + registro_periodo(normalizado).
+    Devuelve largo: columnas agregadas + 'periodo'.
+    """
+    if "fecha" not in df.columns:
+        raise ValueError("'fecha' no está en df.columns")
+    if "registro_periodo" not in df.columns:
+        raise ValueError("'registro_periodo' no está en df.columns")
+
+    tmp = df.copy()
+    tmp["periodo"] = tmp["registro_periodo"].map(_norm_periodo)
+    final_agg = _safe_agg_for(tmp.columns, agg)
+
+    out = (tmp
+           .groupby(["fecha","periodo"], as_index=False)
+           .agg(final_agg))
+
+    # Para métricas de conteo diario que luego sumarás (acto_verdad, limites_practicados, etc.)
+    return out
+
+def aggregate_daily(df, agg):
+    """
+    Consolida a un registro por día:
+    - Si existe algún registro con periodo 'DIA', usa solo esos.
+    - Si no, combina AM/PM/NOCHE.
+    - Para flags tipo acto_verdad, cuenta (suma) a nivel día.
+    """
+    tmp = df.copy()
+    tmp["periodo"] = tmp["registro_periodo"].map(_norm_periodo)
+
+    cols = tmp.columns
+    final_agg = _safe_agg_for(cols, agg)
+
+    # 1) Agregado por bloque (para después consolidar reglas por día)
+    by_block = (tmp
+        .groupby(["fecha","periodo"], as_index=False)
+        .agg(final_agg))
+
+    # 2) Elegir fuente por día:
+    #    si hay DIA → quedarnos con esos; si no, sumar/mezclar AM/PM/NOCHE.
+    def _pick_rows(g):
+        if (g["periodo"] == "DIA").any():
+            return g[g["periodo"] == "DIA"]
+        return g  # se combinan abajo
+
+    picked = by_block.groupby("fecha", group_keys=False).apply(_pick_rows)
+
+    # 3) Re-agregar a nivel día:
+    #    - numéricos: mean o sum según el mapeo original
+    #    - textos: join_unique
+    # Detectamos cuáles funciones son sum/mean/func
+    sum_cols = [k for k, v in agg.items() if v == "sum" and k in picked.columns]
+    mean_cols = [k for k, v in agg.items() if v == "mean" and k in picked.columns]
+    func_cols = {k: v for k, v in agg.items() if k in picked.columns and v not in {"sum","mean"}}
+
+    parts = []
+    if sum_cols:
+        parts.append(picked.groupby("fecha", as_index=False)[sum_cols].sum())
+    if mean_cols:
+        parts.append(picked.groupby("fecha", as_index=False)[mean_cols].mean())
+
+    # columnas con funciones personalizadas (join_unique, mean_num, max_01...)
+    if func_cols:
+        fdf = picked.groupby("fecha").agg(func_cols).reset_index()
+        parts.append(fdf)
+
+    # merge progresivo por 'fecha'
+    if not parts:
+        return picked.groupby("fecha", as_index=False).first()
+
+    out = parts[0]
+    for p in parts[1:]:
+        out = out.merge(p, on="fecha", how="outer")
+
+    # ejemplo de métricas derivadas útiles a nivel día:
+    # - total_verdades = conteo de actos de verdad en el día (si hubo múltiples bloques)
+    if "acto_verdad" in picked.columns:
+        verd = (picked
+                .assign(acto_verdad_num=pd.to_numeric(picked["acto_verdad"], errors="coerce").fillna(0))
+                .groupby("fecha", as_index=False)["acto_verdad_num"].sum()
+                .rename(columns={"acto_verdad_num":"acto_verdad_total"}))
+        out = out.merge(verd, on="fecha", how="left")
+
+    if "limites_practicados" in picked.columns and "limites_practicados" not in sum_cols:
+        lim = (picked.groupby("fecha", as_index=False)["limites_practicados"].sum()
+               .rename(columns={"limites_practicados":"limites_practicados_total"}))
+        out = out.merge(lim, on="fecha", how="left")
+
+    return out
+
+def aggregate_blocks_wide(df, suffix_map=None, aggregate=None):
+    """
+    Igual que aggregate_by_block, pero pivotea a columnas por bloque.
+    Sufijos por defecto: AM→_am, PM→_pm, NOCHE→_noche, DIA→_dia
+    """
+    if suffix_map is None:
+        suffix_map = {"AM":"_am","PM":"_pm","NOCHE":"_noche","DIA":"_dia","UNK":"_unk"}
+    by_block = aggregate_by_block(df, aggregate)
+    value_cols = [c for c in by_block.columns if c not in {"fecha","periodo"}]
+
+    wide = (by_block
+            .pivot(index="fecha", columns="periodo", values=value_cols))
+
+    # flatea MultiIndex columnas → colname + sufijo
+    wide.columns = [f"{col}{suffix_map.get(per, f'_{per.lower()}')}" for (col, per) in wide.columns]
+    wide = wide.reset_index()
+    return wide
+
+
 # Exceso sobre un límite: (x - L)+ * k, saturado a 10
 def s_exceso(x, limite, k=1.0, top=10):
     return ((x - limite).clip(lower=0) * k).clip(upper=top)

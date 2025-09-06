@@ -11,10 +11,11 @@ def grafico_cm_sparkline_seaborn(
     out_svg: Optional[str] = None,
     date_col: str = "fecha",
     cm_col: str = "carga_metabolica",
-    width_px: int = 900,
-    height_px: int = 50,             # ¡no excede 50px!
-    dpi: int = 200,                  # 50px = 0.25" a 200 dpi
+    width_px: int = 600,
+    height_px: int = 100,             # ¡no excede 50px!
+    dpi: int = 300,                  # 50px = 0.25" a 200 dpi
     y_domain: Tuple[float, float] = (0, 10),
+    font_scale = 0.8,
     show_band: bool = True           # banda “óptimo” opcional (CM bajo)
 ) -> Dict[str, Optional[str]]:
     """
@@ -32,10 +33,12 @@ def grafico_cm_sparkline_seaborn(
     dfi[cm_col] = pd.to_numeric(dfi[cm_col], errors="coerce").astype(float)
     dfi = dfi.sort_values(date_col).reset_index(drop=True)
 
+    sns.set_context("paper", font_scale=font_scale)
+
     # Filtrar NaN completos
     if dfi[cm_col].notna().sum() == 0:
         # Crear una imagen vacía mínima que diga “Sin datos”
-        fig, ax = plt.subplots(figsize=(max(1, width_px)/dpi, min(height_px, 50)/dpi), dpi=dpi)
+        fig, ax = plt.subplots(figsize=(max(1, width_px)/dpi, min(height_px, 100)/dpi), dpi=dpi)
         ax.text(0.5, 0.5, "CM sin datos", ha="center", va="center", fontsize=8, color="#6b7a86")
         ax.axis("off")
     else:
@@ -46,7 +49,7 @@ def grafico_cm_sparkline_seaborn(
         })
 
         # Tamaño físico según píxeles (altura limitada)
-        height_px = min(int(height_px), 50)
+        height_px = min(int(height_px), 100)
         fig_w = max(1, int(width_px)) / dpi
         fig_h = height_px / dpi
         fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
@@ -73,10 +76,10 @@ def grafico_cm_sparkline_seaborn(
             ax.annotate(
                 f"{y_last:.1f}",
                 xy=(x_last, y_last),
-                xytext=(4, 2),
+                xytext=(2, 2),
                 textcoords="offset points",
                 color="#c0392b",
-                fontsize=7,
+                fontsize=4,
                 fontweight="bold",
                 ha="left",
                 va="bottom",

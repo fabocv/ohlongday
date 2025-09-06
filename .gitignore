@@ -9,3 +9,4 @@ bdp_sample*
 *.pdf
 bdp/templates/*.png
 bdp/templates/*.svg
+bdp/templates/out/*

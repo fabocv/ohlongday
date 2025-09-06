@@ -256,9 +256,11 @@ def compute_CM(
     col_thc_mg: Optional[str] = None,
     col_stim_events: Optional[str] = "stim_ev_total",
     # Pesos (suman 1)
-    weights: Dict[str, float] = None
+    weights: Dict[str, float] = None,
+    return_components: bool=False
 ) -> Tuple[pd.Series, dict]:
 
+    idx = daily.index
     if weights is None:
         weights = {"sleep": 0.26, "gly": 0.14, "alc": 0.12, "caf": 0.10,
             "mov": 0.12, "nic": 0.07, "thc": 0.05, "alim": 0.07,
@@ -320,11 +322,12 @@ def compute_CM(
         if col_stim_events and col_stim_events in df.columns else pd.Series(np.nan, index=df.index)
     )
 
-    comps = pd.DataFrame({
+    metabolicos = {
         "s_sleep": s_sleep, "s_gly": s_gly, "s_alc": s_alc, "s_caf": s_caf,
         "s_mov": s_mov, "s_nic": s_nic, "s_thc": s_thc,
         "s_alim": s_alim, "s_hyd": s_hyd, "s_stim": s_stim
-    })
+    }
+    comps = pd.DataFrame(metabolicos, index=idx)  # ← fuerza índice igual a daily
 
     def _row_cm(r) -> float:
         vals = {
@@ -336,13 +339,14 @@ def compute_CM(
         return np.nan if v is None else float(np.clip(v, 0, 10))
 
     CM = comps.apply(_row_cm, axis=1)
+    CM.name = "CM"  # ← nómbralo para que el join sea directo
 
     meta = {
         "coverage_frac_mean": float(comps.notna().mean(axis=1).mean()),
         "components_present_per_day": comps.notna().sum(axis=1).to_dict(),
         "weights_used_base": weights,
     }
-    return CM, meta
+    return CM, meta, metabolicos
 
 
 _NUM = r'(?P<num>\d+(?:[.,]\d+)?)'

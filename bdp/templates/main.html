@@ -5,7 +5,7 @@
 <title>Informe BDP v1.6.1 — {{ periodo.titulo or "Resumen" }}</title>
 <style>
   /* ===== Print-safe base ===== */
-  @page { size: A4; margin: 16mm 14mm; }
+  @page { size: A4; margin: 12mm 12mm; }
   html, body { margin:0; padding:0; }
   body{
     /* Familias robustas en Linux; agrega Noto Color Emoji si la tienes */
@@ -153,6 +153,10 @@
     </div>
   </section>
 
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
   <!-- NARRATIVA + TENDENCIAS -->
   <!-- ===== VISOR RÁPIDO: 1 gráfico + 1 tabla compacta ===== -->
   <section class="row">
@@ -242,14 +246,126 @@
     </div>
     <div class="card">
       <div class="card nobreak" style="flex:1 1 300pt; min-width:300pt;">
-      <h2>🧩 Carga Metabólica diaria</h2>
-      {% if charts.cm_png %}
-        <img src="{{ charts.cm_png }}" alt="Tendencia principal" style="width:100%; border-radius:8pt;" />
+        <h2>🧩 Carga Metabólica diaria</h2>
+        {% if charts.cm_png %}
+          <img src="{{ charts.cm_png }}" alt="Tendencia principal" style="width:100%; border-radius:8pt;" />
+        {% else %}
+          <div class="imgbox">Inserta PNG/JPG (p.ej. Bienestar y su EMA)</div>
+        {% endif %}
+        <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
+      </div>
+    </div>
+
+  </section>
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>Sueño, siestas, bienestar y malestares.</h2>
+      {% if charts.sueno_png %}
+        <img src="{{ charts.sueno_png }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
       {% else %}
-        <div class="imgbox">Inserta PNG/JPG (p.ej. Bienestar y su EMA)</div>
+        <div class="imgbox">Inserta PNG/JPG (p.ej. Sueño, bienestar y malestar)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      
+      {% if charts.hydra_alim %}
+        <img src="{{ charts.hydra_alim }}" alt="Hidratación & Alimentación" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. hydra_alim)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2></h2>
+      {% if charts.dash %}
+        <img src="{{ charts.dash }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. DASH)</div>
       {% endif %}
       <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
     </div>
+  </section>
+
+
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2></h2>
+      {% if charts.hipo_ans %}
+        <img src="{{ charts.hipo_ans }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. hipo_ans)</div>
+      {% endif %}
+      <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
+    </div>
+  </section>
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <section style="padding-top: 5pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>Hormonas (proxies)</h2>
+      {% if charts.proxies %}
+        <img src="{{ charts.proxies }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+
+        <ul class="list">
+          {% for proxie in charts.msje_proxies %}
+          <li>{{ proxie }}</li>{% else %}
+          <li>Sin interpretaciones</li>{% endfor %}
+        </ul>
+        <br>
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. proxies)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <h1 style="padding: 4pt; margin-top: 4pt;">Sección de Movimiento </h1>
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>ACWR</h2>
+      {% if charts.movimiento %}
+        <img src="{{ charts.movimiento }}" alt="Movimiento" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. movimiento)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section style="padding-top: 5pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>(Foster) Curva Monotony</h2>
+      <div class="muted">Alta monotony = muy poca variación entre días (se siente “igual todos los días”) → más riesgoso</div>
+      {% if charts.ms_mono %}
+        <img src="{{ charts.ms_mono }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. ms_mono)</div>
+      {% endif %}
+      <br>
+      <h2>Strain (Foster): </h2>
+      <div class="muted">Monotony × carga semanal (suma 7d) → estrés total de la semana.</div>
+      {% if charts.ms_strain %}
+        <img src="{{ charts.ms_strain }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. ms_mono)</div>
+      {% endif %}
+      
     </div>
   </section>
 

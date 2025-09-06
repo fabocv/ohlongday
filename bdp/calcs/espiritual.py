@@ -76,7 +76,6 @@ def media_semanal_ultimos7(df: pd.DataFrame, col, modo='fair'):
     if pd.isna(last_day): return None, None, None, None
     idx7 = pd.date_range(last_day - pd.Timedelta(days=6), last_day, freq='D')
     serie = (df[['fecha_logica', col]].groupby('fecha_logica', as_index=True)[col].mean())
-    print(serie)
     if modo == 'fair':
         val = serie[serie.index.isin(idx7)].mean()
     elif modo == 'disciplina':
