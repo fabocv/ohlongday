@@ -100,8 +100,6 @@ def aggregate_daily(df, agg):
 
     picked = by_block.groupby("fecha", group_keys=False).apply(_pick_rows, include_groups=True) \
         .reset_index(drop=True)
-
-    print(picked.head(20))
  
     # 3) Re-agregar a nivel día:
     #    - numéricos: mean o sum según el mapeo original

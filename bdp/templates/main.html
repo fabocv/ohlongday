@@ -94,9 +94,9 @@
   <section class="hero">
     <h1>✨ Informe Bienestar Data Project (BDP)</h1>
     <p class="muted">
-      {{ periodo.rango_humano or "Últimos 7 días" }} ·
-      Estado general: <strong>{{ resumen.estado or "estable" }}</strong> ·
-      {{ resumen.frase_humana or "Micro-avances visibles con buena resiliencia." }}
+      {{periodo.fechahoy}}<!-- {{ periodo.rango_humano or "Últimos 7 días" }} --> ·
+      Estado general percibido: <strong>{{ resumen.estado or "estable" }}</strong> ·
+      <!-- {{ resumen.frase_humana or "Micro-avances visibles con buena resiliencia." }} -->
     </p>
     <div class="badges">
       <span class="badge">Bienestar: <strong>{{ kpi.bienestar_nivel or "medio" }}</strong></span>

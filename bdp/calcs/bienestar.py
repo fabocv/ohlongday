@@ -35,13 +35,13 @@ def bienestar_delta(daily: pd.DataFrame):
     return indicadores(daily,"bienestar_ema")
 
 def bienestar_neto_delta(daily: pd.DataFrame):
-    return indicadores(daily,"bienestar_neto")
+    return indicadores(daily,"WBN_ex")
 
 def malestar(daily: pd.DataFrame):
     return indicadores(daily,"malestar_ema",normal = -1.0)
 
 def bienestar_neto(daily: pd.DataFrame):
-    return indicadores(daily,"bienestar_neto")
+    return indicadores(daily,"WBN_ex")
 
 def animo_delta(daily: pd.DataFrame):
     return indicadores(daily,"animo")
@@ -59,7 +59,7 @@ import math
 import numpy as np
 import pandas as pd
 
-def calc_resumen_plus(daily: pd.DataFrame, col: str = "bienestar_neto", alpha: float = 0.30):
+def calc_resumen_plus(daily: pd.DataFrame, col: str = "bienestar", alpha: float = 0.30):
     """
     Informe semanal completo (robusto a faltantes).
 
@@ -130,10 +130,19 @@ def calc_resumen_plus(daily: pd.DataFrame, col: str = "bienestar_neto", alpha: f
     # Estado por buckets
     def bucket_bienestar(x: float) -> str:
         if x != x: return "—"
-        if x >= 6.5: return "alto"
-        if x >= 3.5: return "medio"
-        return "bajo"
-    estado_map = {"alto":"positivo","medio":"estable","bajo":"preocupante","—":"—"}
+        if x > 7.7: return "idoneo"
+        if x >= 5.8: return "alto"
+        if x >= 3.8: return "medio"
+        if x >= 1.8: return "bajo"
+        else: return "preocupante"
+    estado_map = {
+        "idoneo": "idóneo",
+        "alto":"positivo",
+        "medio":"estable",
+        "bajo":"complicado",
+        "preocupante": "preocupante",
+        "—":"—"}
+        
     estado = estado_map.get(bucket_bienestar(bien_mean_7), "estable")
     out["estado"] = estado
 
@@ -374,8 +383,9 @@ def calc_resumen_plus(daily: pd.DataFrame, col: str = "bienestar_neto", alpha: f
 
 
 def tendencia_bienestar(daily):
-    ema_now = daily["bienestar_neto"].iloc[-1]
-    ema_prev = daily["bienestar_neto"].iloc[-7] if len(daily) >= 7 else daily["bienestar_neto"].iloc[0]
+    bienestar_neto = "WBN_ex"
+    ema_now = daily[bienestar_neto].iloc[-1]
+    ema_prev = daily[bienestar_neto].iloc[-7] if len(daily) >= 7 else daily[bienestar_neto].iloc[0]
     slope = ema_now - ema_prev
 
     if slope > 0.7:
@@ -403,7 +413,7 @@ def kpi_bienestar(daily, alpha = 0.30):
     claridad_datos, claridad_score, claridad_nivel, claridad_fmt, claridad_clase        = claridad_delta(daily)
     _, mal_score, mal_nivel, mal_fmt, mal_clase        = malestar(daily)
     kpi = {
-        "bienestar_nivel": bienestar_neto_nivel,
+        "bienestar_nivel": bienestar_nivel,
         "bienestar_score":  bienestar_score,
         "bienestar_delta_fmt": bienestar_fmt ,
         "bienestar_delta_clase": bienestar_clase,

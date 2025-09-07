@@ -18,6 +18,10 @@ from bdp.calcs.proxies import *
 from bdp.calcs.movimiento import * 
 from weasyprint import HTML
 import os
+from datetime import datetime
+
+current_datetime = datetime.now()
+fechahoy = current_datetime.strftime("%d-%m-%Y, %H:%M hrs")
 
 env = Environment(
     loader=FileSystemLoader("bdp/templates"), autoescape=select_autoescape(["html", "xml"])
@@ -25,7 +29,7 @@ env = Environment(
 
 
 context = {
-    "periodo": {"titulo": "Semana 35", "rango_humano": "26 Ago – 2 Sept"},
+    "periodo": {"titulo": "Semana 35", "rango_humano": "Desde 1 Ago", "fechahoy": fechahoy},
     "resumen": {"estado": "estable", "frase_humana": "Buenos cimientos; afina el descanso."},
     "kpi": {
         "bienestar_nivel": "medio",
@@ -130,7 +134,7 @@ def datos_diarios(df):
     ### rutas de gráficos png  ###
 
     base = os.getcwd() + "/bdp/templates/out/"
-    out_path =  base + "tendencia.png"
+    out_path_tendencia =  base + "tendencia.png"
     out_path_sueno =  base + "tendencia_sueno.png"
     out_path_actograma_sueno = base + "actograma_sueno.png"
     out_path_screen_sueno = base + "ptn_sueno.png"
@@ -300,7 +304,7 @@ def datos_diarios(df):
     context.update({ 
         "kpi": kpi, 
         "charts": {
-            "main_src": out_path,
+            "main_src": out_path_tendencia,
             "cm_png": out_path_cm,
             'sueno_png': out_path_sueno,
             'actograma_sueno': out_path_actograma_sueno,
@@ -368,8 +372,8 @@ def datos_diarios(df):
 
     res = generar_grafico_bienestar_seaborn(
         daily,
-        out_html=out_path.replace(".png", ".html"),
-        out_png=out_path,   # opcional
+        out_html=out_path_tendencia.replace(".png", ".html"),
+        out_png=out_path_tendencia,   # opcional
         #title="Tendencia de Bienestar Neto (7–14d)"
     )
 
@@ -385,7 +389,7 @@ def datos_diarios(df):
 
     dias_de_riesgo =  res["risk_days"]
 
-    out = calc_resumen_plus(daily=daily,col="WBN_ex")
+    out = calc_resumen_plus(daily=daily,col="bienestar_ema")
 
     context.update({
         "resumen": {"estado": out["estado"], "frase_humana": out["frase_humana"]},

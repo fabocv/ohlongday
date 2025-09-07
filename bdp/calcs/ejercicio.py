@@ -99,7 +99,8 @@ def apply_exercise_to_WBN(
     # Alivio metabólico opcional
     MB_adj = (MB - relief_MB_mu * EXraw).clip(lower=0.0)
 
-    WBN_ex = WB - MB_adj - (PT0_adj + PT1_adj) + EX_dir
+    amortiguacion_malestares = 0.6
+    WBN_ex = WB + EX_dir - (MB_adj + (PT0_adj + PT1_adj) ) * amortiguacion_malestares
     if clip_0_10:
         WBN_ex = WBN_ex.clip(0, 10)
 

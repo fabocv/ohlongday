@@ -548,7 +548,7 @@ def panel_hidratacion_vs_bienestar(
     # x: intentamos en este orden (convierte a litros si hace falta)
     agua_candidates=("agua_litros","hidratacion_litros","agua_ml","agua_cc"),
     # y: bienestar (0–10)
-    y_candidates=("WBN","bienestar_neto","bienestar"),
+    y_candidates=("WBN_ex","bienestar_neto","bienestar"),
     lookback_days=30,
     lowess=True,             # usa LOESS (suave); pon False para OLS
     winsorize_pct=None,      # e.g. 0.01 para recortar outliers
@@ -644,7 +644,7 @@ def panel_alimentacion_vs_bienestar(
     alim_score_candidates=("s_alim","alimentacion"),
     alim_quality_candidates=("alimentacion_calidad","calidad_alimentacion"),
     raw_is_quality_positive=True,   # si True: carga = 10 - calidad
-    y_candidates=("WBN","bienestar_neto","bienestar"),
+    y_candidates=("WBN_ex","bienestar_neto","bienestar"),
     lookback_days=30,
     lowess=True,
     winsorize_pct=None,
