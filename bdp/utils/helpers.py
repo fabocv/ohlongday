@@ -38,10 +38,10 @@ def _strip_accents(txt):
 
 def _norm_periodo(v):
     s = _strip_accents(v)
-    if s in {"dia entero","entero","todo el dia","completo","dia"}: return "DIA"
-    if s in {"manana","am","morning"}: return "AM"
-    if s in {"tarde","pm","afternoon"}: return "PM"
-    if s in {"noche","night"}: return "NOCHE"
+    if "día" in s: return "DIA"
+    if "manana" in s: return "AM"
+    if "tarde" in s: return "PM"
+    if "noche" in s: return "NOCHE"
     return "UNK"
 
 
@@ -95,8 +95,14 @@ def aggregate_daily(df, agg):
             return g[g["periodo"] == "DIA"]
         return g  # se combinan abajo
 
-    picked = by_block.groupby("fecha", group_keys=False).apply(_pick_rows, include_groups=True)
+    
+    lista = [a for a in final_agg]
 
+    picked = by_block.groupby("fecha", group_keys=False).apply(_pick_rows, include_groups=True) \
+        .reset_index(drop=True)
+
+    print(picked.head(20))
+ 
     # 3) Re-agregar a nivel día:
     #    - numéricos: mean o sum según el mapeo original
     #    - textos: join_unique
