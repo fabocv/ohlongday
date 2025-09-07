@@ -196,7 +196,7 @@ def eventos_a_equivalentes(
 
     # Equivalentes nicotina (sumar todo lo que haya)
     nic_eq_cigs = (
-        pd.to_numeric(d.get("nic_cigs"), errors="coerce").fillna(0.0) +
+        pd.to_numeric(d.get("nic_ev_total"), errors="coerce").fillna(0.0) +
         pd.to_numeric(d.get("nic_mg"), errors="coerce").fillna(0.0) / 1.5 +      # ~1.5 mg ≈ 1 cig
         pd.to_numeric(d.get("nic_puffs"), errors="coerce").fillna(0.0) / 10.0 +  # ~10 puffs ≈ 1 cig
         event_to_cig * pd.to_numeric(d.get("nic_ev_total"), errors="coerce").fillna(0.0) +
@@ -205,14 +205,16 @@ def eventos_a_equivalentes(
 
     # Equivalentes THC
     thc_eq_joints = (
-        pd.to_numeric(d.get("thc_joints"), errors="coerce").fillna(0.0) +
+        pd.to_numeric(d.get("thc_ev_total"), errors="coerce").fillna(0.0) +
         pd.to_numeric(d.get("thc_mg"), errors="coerce").fillna(0.0) / 10.0 +     # ~10 mg inhalado ≈ 1 joint
         event_to_joint * pd.to_numeric(d.get("thc_ev_total"), errors="coerce").fillna(0.0) +
         night_bonus * event_to_joint * pd.to_numeric(d.get("thc_ev_noche"), errors="coerce").fillna(0.0)
     )
 
-    d["nic_cigs_equiv"] = nic_eq_cigs
-    d["thc_joints_equiv"] = thc_eq_joints
+    d["nic"] = nic_eq_cigs #nic_cigs_equiv
+    d["thc"] = thc_eq_joints # thc_joints_equiv
+    d["stim"] = d["stim_ev_total"]
+
     return d
 
 def score_stims_from_events(events: pd.Series, m50=1.0, k=1.2, cap=4) -> pd.Series:
@@ -233,7 +235,7 @@ def _renorm_weighted_sum(values: Dict[str, float], weights: Dict[str, float]) ->
     w = {k: wv/s for k, wv in w.items()}
     return sum(present[k] * w[k] for k in present)
 
-def compute_CM(
+def compute_CM_sustancias(
     daily: pd.DataFrame,
     *,
     col_sleep_score: str = "s_sleep",          # 0..10 (más = peor sueño)

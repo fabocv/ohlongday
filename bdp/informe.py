@@ -195,8 +195,11 @@ def datos_diarios(df):
     
     #daily[["sleep_reh","sleep_reh_adj","sleep_deficit_h","s_sleep","sleep_episodes"]] = daily.apply(sleep_effective_hours, axis=1)
 
+    #daily = pd.concat([daily, sub_daily], axis=1)
+    for col in ["thc", "nic", "stim"]:
+        daily[col] = sub_daily[col]
     # 2) Llama a tu compute_CM usando las columnas derivadas
-    CM, cm_meta, metabolicos = compute_CM(
+    CM, cm_meta, metabolicos = compute_CM_sustancias(
         daily,
         col_sleep_score="s_sleep",
         col_glicemia="glicemia",                 # si no existe, renormaliza
@@ -209,8 +212,9 @@ def datos_diarios(df):
         col_nic_mg="nicotina_mg",
         col_nic_puffs="nicotina_puffs",
         col_thc_mg="thc_mg",
-        col_nic_cigs="nic_cigs_equiv",
-        col_thc_joints="thc_joints_equiv",
+        col_nic_cigs="nic",
+        col_thc_joints="thc",
+        col_stim_events="stim"
     )
 
     
@@ -335,6 +339,11 @@ def datos_diarios(df):
     for nombre_met in metabolicos.keys():
         daily[nombre_met] = metabolicos[nombre_met]
 
+     # 4) Descomposición CM
+    res = grafico_cm_last7(daily, out_png=out_path_cm_descomp,
+            kind="multiples", mode="raw", font_scale=0.85)
+    
+
     png = dashboard_semana_bdp(
         daily,
         out_png=out_path_dash,
@@ -377,10 +386,7 @@ def datos_diarios(df):
         #title="Tendencia de Bienestar Neto (7–14d)"
     )
 
- # 4) Descomposición CM
-    res = grafico_cm_last7(daily, out_png=out_path_cm_descomp,
-                       kind="multiples", mode="raw", font_scale=0.85)
-    
+
     res = grafico_sueno_y_bienestar_seaborn(
         daily,
         out_png= out_path_sueno,
