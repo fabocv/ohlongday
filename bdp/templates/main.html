@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Informe BDP v1.6.1 — {{ periodo.titulo or "Resumen" }}</title>
+<style>
+  /* ===== Print-safe base ===== */
+  @page { size: A4; margin: 12mm 12mm; }
+  html, body { margin:0; padding:0; }
+  body{
+    /* Familias robustas en Linux; agrega Noto Color Emoji si la tienes */
+    font-family: "DejaVu Sans","Noto Sans",Arial,sans-serif;
+    font-size: 11.5pt; line-height: 1.45; color: #122235;
+    background: #f6f8fa;
+  }
+  h1,h2,h3 { margin: 0 0 6pt; line-height:1.25; }
+  h1 { font-size: 20pt; font-weight: 800; }
+  h2 { font-size: 14pt; font-weight: 800; margin-top: 14pt; }
+  h3 { font-size: 12.5pt; font-weight: 700; }
+
+  sub { font-size: 8pt;}
+
+  .container { max-width: 980px; margin: 0 auto; padding: 18pt 10pt 20pt; }
+  .hero {
+    background: #fff; border-radius: 12pt; box-shadow: 0 4pt 12pt rgba(10,22,50,.06);
+    padding: 16pt;
+  }
+  .muted { color: #5c718a; }
+  .badges { margin-top: 8pt; display: flex; flex-wrap: wrap; gap: 6pt; }
+  .badge {
+    border: 1pt solid #d8eee5; background: #eef7f3; color:#0f5132;
+    border-radius: 999pt; padding: 3pt 7pt; font-weight: 700; font-size: 9.5pt;
+  }
+
+  /* ===== Cards y layout flex (no grid) ===== */
+  .row { display: flex; flex-wrap: wrap; gap: 10pt; }
+  .card {
+    background: #fff; border-radius: 12pt; box-shadow: 0 4pt 12pt rgba(10,22,50,.06);
+    padding: 12pt; min-height: 80pt; break-inside: avoid; /* evita cortes de página */
+  }
+  .col-3 > .card { width: calc(33.333% - 6.7pt); min-width: 180pt; flex: 1 1 180pt; }
+  .col-2 > .card { width: calc(50% - 5pt);    min-width: 240pt; flex: 1 1 240pt; }
+  .full > .card  { width: 100%; }
+  .lead { font-size: 18pt; font-weight: 800; margin: 2pt 0 3pt; }
+  .chip { display:inline-block; border-radius:999pt; padding: 2pt 6pt; font-size:9pt; font-weight:700; }
+  .up   { background:#eaf7ed; color:#2e7d32; border:1pt solid #d9f0de; }
+  .down { background:#fdecec; color:#b42323; border:1pt solid #fad1d1; }
+  .flat { background:#eef1f6; color:#334155; border:1pt solid #d6dae1; }
+
+  .pill {
+    display:inline-block; margin-top: 4pt; padding: 4pt 6pt;
+    background: #fff7ed; color: #7c2d12; border:1pt solid #ffedd5;
+    border-radius: 8pt; font-size: 9.5pt; font-weight: 700;
+  }
+
+  .kv { display:flex; gap:8pt; margin: 3pt 0; }
+  .kv .key { min-width: 95pt; font-weight:700; }
+
+  .imgbox {
+    border:1pt dashed #cfd8e3; border-radius: 10pt; color:#5c718a;
+    display:flex; align-items:center; justify-content:center; min-height: 95pt; font-size: 9.5pt;
+  }
+
+  .callout { border-left: 5pt solid #3aa882; background: #f0fbf6; padding: 8pt 10pt; border-radius: 8pt; }
+  .list { margin: 4pt 0 0; padding-left: 14pt; }
+  .foot { margin-top: 12pt; color:#5c718a; font-size: 9.5pt; text-align:center; }
+
+  /* Forzar saltos limpios cuando haga falta */
+  .page-break { page-break-before: always; margin-top: 8pt; }
+  /* --- Compact table + chips (semi-Airbnb) --- */
+  .table-compact { width:100%; border-collapse:collapse; font-size:10.5pt; }
+  .table-compact th, .table-compact td {
+    border:1pt solid #dfe3e8; padding:6pt 7pt; text-align:left; white-space:nowrap;
+  }
+  .table-compact th { background:#f7fafc; font-weight:800; color:#334155; }
+  .table-compact tbody tr:nth-child(even){ background:#fafcff; }
+  .num { text-align:right; font-variant-numeric: tabular-nums; }
+  .tag {
+    display:inline-block; padding:2pt 6pt; border-radius:999pt; font-size:9pt; font-weight:700;
+    border:1pt solid transparent;
+  }
+  .lvl-low  { background:#eaf7ed; color:#2e7d32; border-color:#d9f0de; }
+  .lvl-mid  { background:#eef1f6; color:#334155; border-color:#d6dae1; }
+  .lvl-high { background:#fdecec; color:#b42323; border-color:#fad1d1; }
+  /* Contenedores que no deben cortarse entre páginas */
+  .nobreak { break-inside: avoid; }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HERO -->
+  <section class="hero">
+    <h1>✨ Informe Bienestar Data Project (BDP)</h1>
+    <p class="muted">
+      {{periodo.fechahoy}}<!-- {{ periodo.rango_humano or "Últimos 7 días" }} --> ·
+      Estado general percibido: <strong>{{ resumen.estado or "estable" }}</strong> ·
+      <!-- {{ resumen.frase_humana or "Micro-avances visibles con buena resiliencia." }} -->
+    </p>
+    <div class="badges">
+      <span class="badge">Bienestar: <strong>{{ kpi.bienestar_nivel or "medio" }}</strong></span>
+      <span class="badge">Tendencia semanal: <strong>{{ kpi.tendencia or "suave ↑" }}</strong></span>
+      <span class="badge">EMA: <strong>{{ kpi.ema_label or "α=0.30 • L=14" }}</strong></span>
+      <span class="badge">Días válidos: <strong>{{ datos.validos or 0 }}</strong></span>
+    </div>
+  </section>
+
+  <!-- KPIs PRINCIPALES -->
+  <h2>Resumen de Variables Percibidas</h2>
+  <section class="row col-3">
+    <div class="card">
+      <h3>🌱 Bienestar Percibido</h3>
+      <div class="lead">{{ kpi.bienestar_score or "—" }} <sub class="sub">semana</sub> </div>
+      <span class="chip {{ kpi.bienestar_delta_clase or 'flat' }}">{{ kpi.bienestar_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Respecto a días previos</div>
+    </div>
+    <div class="card">
+      <h3>😵‍💫 Malestar Ponderado</h3>
+      <div class="lead">{{ kpi.mal_nivel or "—" }}</div>
+      <span class="chip {{ kpi.mal_delta_clase or 'flat' }}">{{ kpi.mal_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Ponderado de estres, ansiedad, irritab, mal sueño y cargas metabólicas </div>
+    </div>
+    <div class="card">
+      <h3>🙂 Ánimo</h3>
+      <div class="lead">{{ kpi.animo_nivel or "—" }}</div>
+      <span class="chip {{ kpi.animo_delta_clase or 'flat' }}">{{ kpi.animo_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Tono emocional percibido</div>
+    </div>
+    <div class="card">
+      <h3>😵‍💫 Estrés</h3>
+      <div class="lead">{{ kpi.estres_nivel or "—" }}</div>
+      <span class="chip {{ kpi.estres_delta_clase or 'flat' }}">{{ kpi.estres_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Carga percibida (S⁻)</div>
+    </div>
+    <div class="card">
+      <h3>😵‍💫 Ansiedad</h3>
+      <div class="lead">{{ kpi.ans_nivel or "—" }}</div>
+      <span class="chip {{ kpi.ans_delta_clase or 'flat' }}">{{ kpi.ans_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Ansiedad percibida</div>
+    </div>
+    <div class="card">
+      <h3>🧭 Claridad &amp; Propósito</h3>
+      <div class="lead">{{ kpi.claridad_nivel or "—" }}</div>
+      <span class="chip {{ kpi.claridad_delta_clase or 'flat' }}">{{ kpi.claridad_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Dirección y foco</div>
+    </div>
+    <div class="card">
+      <h3>🌱 Bienestar Neto 🌱</h3>
+      <div class="lead">{{ kpi.bienestar_neto_score or "—" }} <sub class="sub">semana</sub> </div>
+      <span class="chip {{ kpi.bienestar_neto_delta_clase or 'flat' }}">{{ kpi.bienestar_neto_delta_fmt or "±0.00" }} desde ayer</span>
+      <div class="muted">Impacto de hábitos sobre el bienestar</div>
+    </div>
+  </section>
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <!-- NARRATIVA + TENDENCIAS -->
+  <!-- ===== VISOR RÁPIDO: 1 gráfico + 1 tabla compacta ===== -->
+  <section class="row">
+    <!-- Gráfico principal -->
+    <div class="card nobreak" style="flex:1 1 300pt; min-width:300pt;">
+      <h2>Tendencia principal</h2>
+      {% if charts.main_src %}
+        <img src="{{ charts.main_src }}" alt="Tendencia principal" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. Bienestar y su EMA)</div>
+      {% endif %}
+      <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
+    </div>
+
+    <!-- Tabla compacta (últimos N días) -->
+     {% if tabla %}
+    <div class="card nobreak" style="flex:1 1 260pt; min-width:260pt;">
+      <h2>Tabla compacta ({{ tabla.titulo or "últimos días" }})</h2>
+      <table class="table-compact">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th class="num">Bienestar EMA</th>
+            <th class="num">S⁻ EMA</th>
+            <th class="num">Ansiedad</th>
+            <th class="num">Hipomania</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in tabla.rows %}
+          <tr>
+            <td>{{ r.fecha }}</td>
+            <td class="num">{{ r.bienestar_ema|round(2) }}</td>
+            <td class="num">{{ r.estres_inv_ema|round(2) }}</td>
+            <td class="num">
+              {{ r.ansiedad_proxy|round(2) }}
+              <span class="tag {{ 'lvl-low' if r.ansiedad_nivel=='bajo' else ('lvl-mid' if r.ansiedad_nivel=='medio' else 'lvl-high') }}">
+                {{ r.ansiedad_nivel }}
+              </span>
+            </td>
+            <td class="num">
+              {{ r.hipomania_proxy|round(2) }}
+              <span class="tag {{ 'lvl-low' if r.hipomania_nivel=='bajo' else ('lvl-mid' if r.hipomania_nivel=='medio' else 'lvl-high') }}">
+                {{ r.hipomania_nivel }}
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted">Sin filas para mostrar.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="muted" style="margin-top:6pt;">
+        Guía: &lt;3 bajo · 3–7 medio · &gt;7 alto. Señales, no diagnóstico.
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+
+  <!-- BLOQUES VITALES -->
+  <h2>Bloques vitales</h2>
+  <section class="row col-3">
+    <div class="card">
+      <h3>⚡ Activación</h3>
+      <div class="lead">{{ bloques.activacion.nivel or "—" }}</div>
+      <div class="muted">{{ bloques.activacion.frase or "Energía utilizable y arranque." }}</div>
+      <span class="pill">{{ bloques.activacion.insight or "Picos matutinos tras sol" }}</span>
+    </div>
+    <div class="card">
+      <h3>🛌 Sueño</h3>
+      <div class="lead">{{ bloques.sueno.calidad or "—" }}</div>
+      <div class="muted">{{ bloques.sueno.frase or "Duración y despertares." }}</div>
+      <span class="pill">{{ bloques.sueno.insight or "Pantallas tarde ↑ = descanso ↓" }}</span>
+    </div>
+    <div class="card">
+      <h3>🤝 Conexión</h3>
+      <div class="lead">{{ bloques.conexion.nivel or "—" }}</div>
+      <div class="muted">{{ bloques.conexion.frase or "Interacciones nutritivas." }}</div>
+      <span class="pill">{{ bloques.conexion.insight or "Pequeñas conversaciones sumaron" }}</span>
+    </div>
+    <div class="card">
+      <h3>🕊️ Espiritualidad</h3>
+      <div class="lead">{{ bloques.espiritualidad.nivel or "—" }}</div>
+      <div class="muted">{{ bloques.espiritualidad.frase or "Prácticas y sentido." }}</div>
+      <span class="pill">{{ bloques.espiritualidad.insight or "Meditación breve, constante" }}</span>
+    </div>
+    <div class="card">
+      <div class="card nobreak" style="flex:1 1 300pt; min-width:300pt;">
+        <h2>🧩 Carga Metabólica diaria</h2>
+        {% if charts.cm_png %}
+          <img src="{{ charts.cm_png }}" alt="Tendencia principal" style="width:100%; border-radius:8pt;" />
+        {% else %}
+          <div class="imgbox">Inserta PNG/JPG (p.ej. Bienestar y su EMA)</div>
+        {% endif %}
+        <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
+      </div>
+    </div>
+
+  </section>
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>Sueño, siestas, bienestar y malestares.</h2>
+      {% if charts.sueno_png %}
+        <img src="{{ charts.sueno_png }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. Sueño, bienestar y malestar)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      
+      {% if charts.hydra_alim %}
+        <img src="{{ charts.hydra_alim }}" alt="Hidratación & Alimentación" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. hydra_alim)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2></h2>
+      {% if charts.dash %}
+        <img src="{{ charts.dash }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. DASH)</div>
+      {% endif %}
+      <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
+    </div>
+  </section>
+
+
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2></h2>
+      {% if charts.hipo_ans %}
+        <img src="{{ charts.hipo_ans }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. hipo_ans)</div>
+      {% endif %}
+      <div class="muted">Basado en tus últimos {{ charts.dias or 7 }} días.</div>
+    </div>
+  </section>
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <section style="padding-top: 5pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>Hormonas (proxies)</h2>
+      {% if charts.proxies %}
+        <img src="{{ charts.proxies }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+
+        <ul class="list">
+          {% for proxie in charts.msje_proxies %}
+          <li>{{ proxie }}</li>{% else %}
+          <li>Sin interpretaciones</li>{% endfor %}
+        </ul>
+        <br>
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. proxies)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+
+  <h1 style="padding: 4pt; margin-top: 4pt;">Sección de Movimiento </h1>
+  <section style="padding-top: 10pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>ACWR</h2>
+      {% if charts.movimiento %}
+        <img src="{{ charts.movimiento }}" alt="Movimiento" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. movimiento)</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section style="padding-top: 5pt;">
+    <div class="card" style="flex:1 1 300pt; min-width:300pt">
+      <h2>(Foster) Curva Monotony</h2>
+      <div class="muted">Alta monotony = muy poca variación entre días (se siente “igual todos los días”) → más riesgoso</div>
+      {% if charts.ms_mono %}
+        <img src="{{ charts.ms_mono }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. ms_mono)</div>
+      {% endif %}
+      <br>
+      <h2>Strain (Foster): </h2>
+      <div class="muted">Monotony × carga semanal (suma 7d) → estrés total de la semana.</div>
+      {% if charts.ms_strain %}
+        <img src="{{ charts.ms_strain }}" alt="Sueno y bienestar" style="width:100%; border-radius:8pt;" />
+      {% else %}
+        <div class="imgbox">Inserta PNG/JPG (p.ej. ms_mono)</div>
+      {% endif %}
+      
+    </div>
+  </section>
+
+  <!-- CAUSAS / MOMENTOS -->
+  <!--
+  <div class="page-break"></div>
+  <section class="row col-2">
+    <div class="card">
+      <h2>Causas probables — 🔼 Elevadores</h2>
+      <ul class="list">
+        {% for s in causas.elevadores %}<li>{{ s }}</li>{% else %}
+        <li>Meditación breve • exposición a sol • movimiento moderado</li>{% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Causas probables — 🔽 Cargas</h2>
+      <ul class="list">
+        {% for s in causas.cargas %}<li>{{ s }}</li>{% else %}
+        <li>Pantallas nocturnas • sueño corto • exceso de cafeína</li>{% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="row col-3">
+    <div class="card">
+      <h2>💪 Día más estable</h2>
+      <div class="kv"><div class="key">Fecha</div><div>{{ momentos.stoic.fecha or "—" }}</div></div>
+      <div class="kv"><div class="key">Por qué</div><div>{{ momentos.stoic.motivo or "hidratos, descanso y límites" }}</div></div>
+    </div>
+    <div class="card">
+      <h2>🌧️ Día desafiante</h2>
+      <div class="kv"><div class="key">Fecha</div><div>{{ momentos.hard.fecha or "—" }}</div></div>
+      <div class="kv"><div class="key">Aprendizaje</div><div>{{ momentos.hard.aprendizaje or "bajar pantallas tarde" }}</div></div>
+    </div>
+    <div class="card">
+      <h2>📈 Retro del período</h2>
+      <div class="kv"><div class="key">Ahora</div><div>{{ retro.hoy or "—" }}</div></div>
+      <div class="kv"><div class="key">Hace 7 días</div><div>{{ retro.hace_7 or "—" }}</div></div>
+    </div>
+  </section>
+
+  <section class="full row">
+    <div class="card" style="width:100%;">
+      <h2>Sugerencias simples (no prescriptivas)</h2>
+      <div class="row col-2">
+        <div class="card" style="flex:1 1 260pt; min-width:260pt;">
+          <h3>✅ Mantener</h3>
+          <ul class="list">{% for s in sugerencias.mantener %}<li>{{ s }}</li>{% else %}
+            <li>Rutina corta de respiración antes de dormir</li>
+            <li>Bloques de foco de 25–35′ con pausas</li>
+          {% endfor %}</ul>
+        </div>
+        <div class="card" style="flex:1 1 260pt; min-width:260pt;">
+          <h3>🧪 Probar</h3>
+          <ul class="list">{% for s in sugerencias.probar %}<li>{{ s }}</li>{% else %}
+            <li>Ventana sin pantallas 90′ antes de dormir</li>
+            <li>Micro-reparación diaria (≤10′)</li>
+          {% endfor %}</ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+-->
+  <p class="foot">
+    Este informe orienta; no reemplaza acompañamiento clínico. Cuida tus límites y pide ayuda cuando lo necesites.
+  </p>
+</div>
+</body>
+</html>

@@ -2,6 +2,38 @@
 *.pyc
 output/*
 __pycache__
-bdp_personal.csv
+*personal*
 outputs
 bdp_sample*
+*katas*
+Mi BDP.pdf
+bdp/templates/*.png
+bdp/templates/*.svg
+bdp/templates/out/*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+output/*.pdf
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node / Angular
+node_modules/
+dist/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# VSCode / IDEs
+.vscode/
+.idea/
+*.swp
