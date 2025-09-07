@@ -95,7 +95,7 @@ def aggregate_daily(df, agg):
             return g[g["periodo"] == "DIA"]
         return g  # se combinan abajo
 
-    picked = by_block.groupby("fecha", group_keys=False).apply(_pick_rows)
+    picked = by_block.groupby("fecha", group_keys=False).apply(_pick_rows, include_groups=True)
 
     # 3) Re-agregar a nivel día:
     #    - numéricos: mean o sum según el mapeo original

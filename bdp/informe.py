@@ -148,7 +148,6 @@ def datos_diarios(df):
     daily_with_proxies = daily.merge(proxies, on="fecha", how="left")
     out_png = plot_proxies_stacked_seaborn(proxies, bands, out_path = out_path_proxies)
     msje_proxies = describe_proxies(proxies)
-    print(f"Gráfico guardado en: {out_png}")
 
     acwr_df = compute_acwr(daily)
     png_path, last_val = plot_acwr_seaborn(acwr_df, out_path=out_path_movimiento)
@@ -156,9 +155,6 @@ def datos_diarios(df):
     ms = compute_monotony_strain(daily)
     mono_png, mono_last = plot_monotony_seaborn(ms, height_px=250, out_path=out_path_mono)
     strain_png, strain_last = plot_strain_seaborn(ms, height_px=250, out_path=out_path_str)
-
-    print(f"Monotony último día: {mono_last:.2f} | Gráfico: {mono_png}")
-    print(f"Strain   último día: {strain_last:.0f} | Gráfico: {strain_png}")
 
     context.update({ "datos": {"validos": len(daily)}})
 
@@ -386,7 +382,8 @@ def datos_diarios(df):
         out_png= out_path_sueno,
         out_svg= out_path_sueno.replace("png","svg")  # opcional
     )
-    print("Días de riesgo:", res["risk_days"])
+
+    dias_de_riesgo =  res["risk_days"]
 
     out = calc_resumen_plus(daily=daily,col="WBN_ex")
 

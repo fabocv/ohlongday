@@ -798,8 +798,6 @@ def grafico_cm_last7(
 
     present = [c for c in comp_candidates if c in d7.columns]
     nz_per_comp = {c: int((pd.to_numeric(d7[c], errors="coerce").fillna(0).abs()>1e-6).sum()) for c in present}
-    print("present:", present)
-    print("no-cero (últimos 7d):", nz_per_comp)
 
     return {
         "png_path": out_png_path.as_posix(),

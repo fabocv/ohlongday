@@ -13,8 +13,8 @@ def sleep_hours_rowwise(hora_dormir, hora_despertar, *, max_hours=None):
     """
 
     # 1) Parseo principal a datetime (para extraer hora:min:seg)
-    hd = pd.to_datetime(hora_dormir, errors="coerce")
-    he = pd.to_datetime(hora_despertar, errors="coerce")
+    hd = pd.to_datetime(hora_dormir, errors="coerce", format="HH:MM")
+    he = pd.to_datetime(hora_despertar, errors="coerce", format="HH:MM")
 
     # 2) Minutos desde medianoche (ignorando la fecha)
     m_hd = (hd.dt.hour.astype("float") * 60 +
